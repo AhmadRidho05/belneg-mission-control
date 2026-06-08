@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+dist/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# TypeScript incremental compile cache
+*.tsbuildinfo
+
+# Data (regenerate via pipeline)
+data/scraped/*.db
+data/extracted/sma/*.csv
+data/extracted/smk/*.csv
+data/extracted/manifest.json
+data/onet/
+database/dikmen_master*.xlsx
+database/*.db
+database/scraped/*.db
+apps/belneg/data/*.db
+pilpres_dataset/*.sqlite
+
+# Source PDFs (large; regenerable from BPS/Kemdikbud)
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Runtime state (loop tick deltas)
+.loop_state.json
+
+# Claude Code session-runtime state (lock files, scheduled-task state)
+.claude/scheduled_tasks.*

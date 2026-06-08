@@ -1,0 +1,31 @@
+{
+  "name": "sekber-dikmen-2025",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistem intelijen pendidikan menengah Indonesia — Pijar Foundation × Kemenko PMK",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter ./apps/belneg dev",
+    "build": "pnpm --filter ./apps/dashboard build",
+    "start": "pnpm --filter ./apps/dashboard start",
+    "scrape:dikmen": "python3 scripts/01_scrape_dikmen.py",
+    "scrape:yayasan": "python3 scripts/02_scrape_yayasan.py",
+    "extract:pdf": "python3 scripts/03_04_extract_pdf_tables.py",
+    "build:db": "python3 scripts/05_build_database.py",
+    "export:xlsx": "python3 scripts/06_export_to_xlsx.py",
+    "pipeline:offline": "pnpm extract:pdf && pnpm build:db && pnpm export:xlsx",
+    "pipeline:full": "pnpm scrape:dikmen && pnpm scrape:yayasan && pnpm extract:pdf && pnpm build:db && pnpm export:xlsx",
+    "pipeline:unattended": "bash scripts/run_unattended.sh",
+    "pipeline:status": "bash scripts/check_progress.sh",
+    "pipeline:stop": "bash scripts/stop_unattended.sh"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "dependencies": {
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
+  }
+}

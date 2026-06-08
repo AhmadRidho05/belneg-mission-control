@@ -1,0 +1,60 @@
+korem_id,kodam_id,kodam,name,address,lat,lng
+KOREM-001,KODAM-01,Kodam I/Bukit Barisan,Berdiri Sendiri,,,
+KOREM-002,KODAM-01,Kodam I/Bukit Barisan,Korem 022/Pantai Timur,"Jl. Asahan Km. 3,5, Pematang Siantar 21151",2.9663193,99.0932277
+KOREM-003,KODAM-01,Kodam I/Bukit Barisan,Korem 023/Kawal Samudera,"Jl. Datuk Itam No. 1, Sibolga 22523",1.7377397,98.7809696
+KOREM-004,KODAM-02,Kodam II/Sriwijaya,Berdiri Sendiri,,,
+KOREM-005,KODAM-02,Kodam II/Sriwijaya,Korem 044/Garuda Dempo,"Jl. Jend. Sudirman Km. 4,5, Palembang 30128",-2.957667,104.7352695
+KOREM-006,KODAM-02,Kodam II/Sriwijaya,Korem 045/Garuda Jaya,"Markas Korem 045/Garuda Jaya, Pangkal Pinang",-2.1556772,106.1570772
+KOREM-007,KODAM-03,Kodam III/Siliwangi,Berdiri Sendiri,,,
+KOREM-008,KODAM-03,Kodam III/Siliwangi,Korem 061/Surya Kencana,"Markas Korem 061/Surya Kencana, Bogor",-6.587218,106.7880135
+KOREM-009,KODAM-03,Kodam III/Siliwangi,Korem 062/Tarumanagara,"Markas Korem 062/Tarumanagara, Garut",-7.221954,107.9109239
+KOREM-010,KODAM-03,Kodam III/Siliwangi,Korem 063/Sunan Gunung Jati,"Markas Korem 063/Sunan Gunung Jati, Cirebon",-6.7272187,108.53979
+KOREM-011,KODAM-03,Kodam III/Siliwangi,Korem 064/Maulana Yusuf,"Markas Korem 064/Maulana Yusuf, Serang",-6.115682,106.1583027
+KOREM-012,KODAM-04,Kodam IV/Diponegoro,Berdiri Sendiri,,,
+KOREM-013,KODAM-04,Kodam IV/Diponegoro,Korem 071/Wijayakusuma,"Markas Korem 071/Wijayakusuma, Purwokerto",-7.4664145,109.2985311
+KOREM-014,KODAM-04,Kodam IV/Diponegoro,Korem 072/Pamungkas,"Markas Korem 072/Pamungkas, Yogyakarta",-7.7983069,110.3637313
+KOREM-015,KODAM-04,Kodam IV/Diponegoro,Korem 073/Makutarama,"Markas Korem 073/Makutarama, Salatiga",-7.3227218,110.5018182
+KOREM-016,KODAM-04,Kodam IV/Diponegoro,Korem 074/Warastratama,"Markas Korem 074/Warastratama, Surakarta",-7.559994,110.7889263
+KOREM-017,KODAM-05,Kodam IX/Udayana,Korem 161/Wira Sakti,"Markas Korem 161/Wira Sakti, Kupang",-10.1735101,123.6155306
+KOREM-018,KODAM-05,Kodam IX/Udayana,Korem 162/Wira Bhakti,"Markas Korem 162/Wira Bhakti, Mataram",-8.6183714,116.1066722
+KOREM-019,KODAM-05,Kodam IX/Udayana,Korem 163/Wira Satya,"Markas Korem 163/Wira Satya, Denpasar",-8.6667471,115.218391
+KOREM-020,KODAM-06,Kodam Iskandar Muda,Berdiri Sendiri,,,
+KOREM-021,KODAM-06,Kodam Iskandar Muda,Korem 011/Lilawangsa,"Markas Korem 011/Lilawangsa, Lhokseumawe",5.1791746,97.1516602
+KOREM-022,KODAM-06,Kodam Iskandar Muda,Korem 012/Teuku Umar,"Markas Korem 012/Teuku Umar, Meulaboh",4.1351629,96.2124517
+KOREM-023,KODAM-07,Kodam Jayakarta,Berdiri Sendiri,,,
+KOREM-024,KODAM-07,Kodam Jayakarta,Korem 051/Wijayakarta,"Markas Korem 051/Wijayakarta, Bekasi",-6.2984991,107.1486163
+KOREM-025,KODAM-07,Kodam Jayakarta,Korem 052/Wijayakrama,"Markas Korem 052/Wijayakrama, Tangerang",-6.2250502,106.6071731
+KOREM-026,KODAM-08,Kodam V/Brawijaya,Korem 081/Dhirotsaha Jaya,"Markas Korem 081/Dhirotsaha Jaya, Madiun",-7.6229061,111.5199134
+KOREM-027,KODAM-08,Kodam V/Brawijaya,Korem 082/Citra Panca Yudha Jaya,"Markas Korem 082/Citra Panca Yudha Jaya, Mojokerto",-7.4619865,112.4316736
+KOREM-028,KODAM-08,Kodam V/Brawijaya,Korem 083/Baladhika Jaya,"Markas Korem 083/Baladhika Jaya, Malang",-7.9776573,112.6259629
+KOREM-029,KODAM-08,Kodam V/Brawijaya,Korem 084/Bhaskara Jaya,"Markas Korem 084/Bhaskara Jaya, Surabaya",-7.3453683,112.7301376
+KOREM-030,KODAM-09,Kodam VI/Mulawarman,Berdiri Sendiri,,,
+KOREM-031,KODAM-09,Kodam VI/Mulawarman,Korem 091/Aji Surya Natakesuma,"Markas Korem 091/Aji Surya Natakesuma, Samarinda",-0.501389,117.142
+KOREM-032,KODAM-09,Kodam VI/Mulawarman,Korem 092/Maharajalila,"Markas Korem 092/Maharajalila, Tanjung Selor",2.8456172,117.3616108
+KOREM-033,KODAM-10,Kodam XII/Tanjungpura,Berdiri Sendiri,,,
+KOREM-034,KODAM-10,Kodam XII/Tanjungpura,Korem 121/Alambhana Wanawai,"Markas Korem 121/Alambhana Wanawai, Sintang",0.08071,111.5059599
+KOREM-035,KODAM-11,Kodam XIII/Merdeka,Korem 131/Santiago,"Markas Korem 131/Santiago, Manado",1.4871226,124.8384475
+KOREM-036,KODAM-11,Kodam XIII/Merdeka,Korem 133/Nani Wartabone,"Markas Korem 133/Nani Wartabone, Gorontalo/Limboto",0.6444481,122.8288131
+KOREM-037,KODAM-12,Kodam XIV/Hasanuddin,Berdiri Sendiri,,,
+KOREM-038,KODAM-12,Kodam XIV/Hasanuddin,Korem 141/Toddopuli,"Markas Korem 141/Toddopuli, Watampone/Bone",-4.5411745,120.3285002
+KOREM-039,KODAM-12,Kodam XIV/Hasanuddin,Korem 143/Halu Oleo,"Markas Korem 143/Halu Oleo, Kendari",-3.9662494,122.518517
+KOREM-040,KODAM-13,Kodam XIX/Tuanku Tambusai,Korem 031/Wirabima,"Jl. Perwira 1, Pekanbaru 28294",0.5290411,101.4520528
+KOREM-041,KODAM-13,Kodam XIX/Tuanku Tambusai,Korem 033/Wira Pratama,"Jl. Batu 14 Sengarang, Tanjung Pinang 29122",0.9484508,104.496296
+KOREM-042,KODAM-14,Kodam XV/Pattimura,Berdiri Sendiri,,,
+KOREM-043,KODAM-14,Kodam XV/Pattimura,Korem 151/Binaiya,"Markas Korem 151/Binaiya, Ambon",-3.7026391,128.1841891
+KOREM-044,KODAM-14,Kodam XV/Pattimura,Korem 152/Baabullah,"Markas Korem 152/Baabullah, Sofifi",0.8095359,127.386502
+KOREM-045,KODAM-15,Kodam XVII/Cenderawasih,Korem 172/Praja Wira Yakhti,"Markas Korem 172/Praja Wira Yakhti, Wamena/Jayapura",-2.606556,140.6537764
+KOREM-046,KODAM-15,Kodam XVII/Cenderawasih,Korem 173/Praja Vira Braja,"Markas Korem 173/Praja Vira Braja, Nabire/Biak",-1.1662449,136.090841
+KOREM-047,KODAM-16,Kodam XVIII/Kasuari,Berdiri Sendiri,,,
+KOREM-048,KODAM-16,Kodam XVIII/Kasuari,Korem 181/Praja Vira Tama,"Markas Korem 181/Praja Vira Tama, Sorong",-0.8743391,131.2866454
+KOREM-049,KODAM-16,Kodam XVIII/Kasuari,Korem 182/Jazira Onim,"Markas Korem 182/Jazira Onim, Fakfak",-2.919099,132.233979
+KOREM-050,KODAM-17,Kodam XX/Tuanku Imam Bonjol,Korem 032/Wirabraja,"Jl. Jend. Sudirman No. 29, Padang 25113",-0.9411549,100.3610348
+KOREM-051,KODAM-17,Kodam XX/Tuanku Imam Bonjol,Korem 042/Garuda Putih,"Jl. Urip Sumoharjo, Jambi 36126",-1.6103591,103.592069
+KOREM-052,KODAM-18,Kodam XXI/Radin Inten,Korem 041/Garuda Emas,"Jl. Pembangunan Sentral 21210, Bengkulu 38225",-3.8199691,102.2860299
+KOREM-053,KODAM-18,Kodam XXI/Radin Inten,Korem 043/Garuda Hitam,"Jl. Teuku Umar No. 85, Tanjung Karang, Bandar Lampung 35112",-5.4015469,105.2601726
+KOREM-054,KODAM-19,Kodam XXII/Tambun Bungai,Berdiri Sendiri,,,
+KOREM-055,KODAM-19,Kodam XXII/Tambun Bungai,Korem 101/Antasari,"Markas Korem 101/Antasari, Banjarmasin",-3.3161321,114.5919631
+KOREM-056,KODAM-19,Kodam XXII/Tambun Bungai,Korem 102/Panju Panjung,"Markas Korem 102/Panju Panjung, Sampit/Palangkaraya",-2.2124231,113.9189107
+KOREM-057,KODAM-20,Kodam XXIII/Palaka Wira,Korem 132/Tadulako,"Markas Korem 132/Tadulako, Palu",-0.8949755,119.8701411
+KOREM-058,KODAM-20,Kodam XXIII/Palaka Wira,Korem 142/Taro Ada Taro Gau,"Markas Korem 142/Taro Ada Taro Gau, Mamuju",-2.6580181,118.8441632
+KOREM-059,KODAM-21,Kodam XXIV/Mandala Trikora,Korem 174/Anim Ti Waninggap,"Markas Korem 174/Anim Ti Waninggap, Merauke",-8.3903112,140.5151632

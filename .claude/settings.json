@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python3:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx:*)",
+      "Bash(curl:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(kill:*)",
+      "Bash(pgrep:*)",
+      "Bash(lsof:*)",
+      "Bash(sleep:*)",
+      "Bash(jq:*)",
+      "Bash(sqlite3:*)"
+    ]
+  }
+}

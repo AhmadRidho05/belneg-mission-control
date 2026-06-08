@@ -1,0 +1,22 @@
+kodam_id,name,address,lat,lng
+KODAM-01,Kodam I/Bukit Barisan,"Jl. Gatot Subroto Km. 7,5, Medan 20122",3.5935496,98.6224806
+KODAM-02,Kodam II/Sriwijaya,"Jl. Jend. Sudirman Km. 2,5, Palembang 30129",-2.9701791,104.749913
+KODAM-03,Kodam III/Siliwangi,"Jl. Aceh No. 69, Bandung",-6.909183,107.6131565
+KODAM-04,Kodam IV/Diponegoro,"Jl. Perintis Kemerdekaan, Watugong, Semarang 50264",-7.0857303,110.407364
+KODAM-05,Kodam IX/Udayana,"Markas Kodam IX/Udayana, Denpasar",-8.6568594,115.2164128
+KODAM-06,Kodam Iskandar Muda,"Markas Kodam Iskandar Muda, Banda Aceh",5.5559307,95.3206048
+KODAM-07,Kodam Jayakarta,"Jl. Mayjen Sutoyo No. 5, Cililitan, Jakarta Timur",-6.2535775,106.8716617
+KODAM-08,Kodam V/Brawijaya,"Jl. Raden Wijaya No. 1, Surabaya",-7.2991656,112.7227758
+KODAM-09,Kodam VI/Mulawarman,"Markas Kodam VI/Mulawarman, Balikpapan",-1.2785356,116.8220391
+KODAM-10,Kodam XII/Tanjungpura,"Markas Kodam XII/Tanjungpura, Kubu Raya/Pontianak",-0.0752178,109.3711878
+KODAM-11,Kodam XIII/Merdeka,"Markas Kodam XIII/Merdeka, Manado",1.4676785,124.8483621
+KODAM-12,Kodam XIV/Hasanuddin,"Markas Kodam XIV/Hasanuddin, Makassar",-5.1430742,119.4635752
+KODAM-13,Kodam XIX/Tuanku Tambusai,"Markas Kodam XIX/Tuanku Tambusai, Pekanbaru/Riau",0.5290056,101.4517645
+KODAM-14,Kodam XV/Pattimura,"Markas Kodam XV/Pattimura, Ambon",-3.6907546,128.1836952
+KODAM-15,Kodam XVII/Cenderawasih,"Jl. Polimak IV Atas, Jayapura 99111",-2.5514715,140.6868675
+KODAM-16,Kodam XVIII/Kasuari,"Arfai, Manokwari Selatan, Manokwari, Papua Barat",-0.9281529,134.0363734
+KODAM-17,Kodam XX/Tuanku Imam Bonjol,"Markas Kodam XX/Tuanku Imam Bonjol, Padang/Sumatera Barat",-0.941237,100.3614076
+KODAM-18,Kodam XXI/Radin Inten,"Markas Kodam XXI/Radin Inten, Lampung/Bengkulu area",-5.4015469,105.2601726
+KODAM-19,Kodam XXII/Tambun Bungai,"Markas Kodam XXII/Tambun Bungai, Palangkaraya/Kalimantan Tengah",-2.2121683,113.9182328
+KODAM-20,Kodam XXIII/Palaka Wira,"Markas Kodam XXIII/Palaka Wira, Palu/Sulawesi Tengah",-0.8868931,119.8710666
+KODAM-21,Kodam XXIV/Mandala Trikora,"Markas Kodam XXIV/Mandala Trikora, Merauke/Papua Selatan",-8.3903112,140.5151632

@@ -1,0 +1,27 @@
+# Vercel runs from apps/belneg/ as cwd and doesn't inherit the repo-root
+# .gitignore. Be explicit about what NOT to upload (otherwise 431MB .next
+# + 48MB local SQLite blow past the 100 MB deployment limit).
+
+# Build output — Vercel rebuilds this remotely
+.next/
+out/
+*.tsbuildinfo
+
+# Deps — Vercel installs from package.json
+node_modules/
+
+# Local-only data (the riasec JSON in data/ IS needed at runtime; only
+# the dev SQLite mirror is excluded)
+data/*.db
+data/*.sqlite
+
+# Local env (Vercel injects its own)
+.env.local
+.env.development
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+
+# Misc local artifacts
+apps/

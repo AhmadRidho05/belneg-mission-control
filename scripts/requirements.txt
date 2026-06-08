@@ -1,0 +1,22 @@
+# SEKBER DIKMEN 2025 — Python dependencies
+# Install: pip install -r scripts/requirements.txt
+#
+# For the PDF extractor, also install `poppler-utils` system package:
+#   Ubuntu/Debian: sudo apt-get install poppler-utils
+#   macOS:         brew install poppler
+#   Windows:       choco install poppler  (or use WSL)
+
+# Async HTTP
+httpx[http2]>=0.27.0
+tenacity>=8.0.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# CLI niceties
+tqdm>=4.66.0
+
+# XLSX export (script 06)
+xlsxwriter>=3.2.0
+anthropic>=0.65.0

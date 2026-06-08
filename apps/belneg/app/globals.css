@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * KKRI brand theme tokens, expressed as "R G B" triplets so Tailwind's
+   * rgb(var(--x) / <alpha-value>) pattern can still apply opacity modifiers
+   * (bg-bg/80, text-accent-glow/80, etc). Dark is the default theme; the
+   * `.light` class on <html> (toggled by TopActions, persisted to
+   * localStorage) swaps the palette to the warm-cream/brand-gold variant.
+   */
+  :root,
+  :root.dark {
+    color-scheme: dark;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+
+    --color-bg: 42 19 0;            /* #2a1300 Blackwood */
+    --color-bg-soft: 58 28 8;       /* #3a1c08 */
+    --color-bg-surface: 74 38 16;   /* #4a2610 */
+    --color-bg-elevated: 92 50 26;  /* #5c321a */
+    --color-ink: 243 235 224;       /* #f3ebe0 */
+    --color-ink-muted: 199 178 154; /* #c7b29a */
+    --color-ink-subtle: 141 122 100;/* #8d7a64 */
+    --color-accent: 164 118 34;     /* #a47622 Sensational Gold */
+    --color-accent-glow: 184 148 53;/* #b89435 Zen Gold */
+    --color-accent-deep: 122 87 25; /* #7a5719 */
+    --color-ok: 16 185 129;
+    --color-warn: 164 118 34;
+    --color-crit: 239 68 68;
+
+    --bg-gradient-glow: rgb(var(--color-accent) / 0.08);
+    --bg-gradient-from: rgb(var(--color-bg));
+    --bg-gradient-to: rgb(31 13 0);
+  }
+
+  :root.light {
+    color-scheme: light;
+
+    --color-bg: 247 241 232;        /* warm cream */
+    --color-bg-soft: 239 230 216;
+    --color-bg-surface: 255 255 255;/* card putih */
+    --color-bg-elevated: 250 245 238;
+    --color-ink: 42 19 0;           /* Blackwood as text on light bg */
+    --color-ink-muted: 107 88 71;
+    --color-ink-subtle: 156 138 118;
+    --color-accent: 164 118 34;     /* Sensational Gold stays brand-true */
+    --color-accent-glow: 184 148 53;
+    --color-accent-deep: 122 87 25;
+    --color-ok: 5 150 105;
+    --color-warn: 164 118 34;
+    --color-crit: 220 38 38;
+
+    --bg-gradient-glow: rgb(var(--color-accent) / 0.10);
+    --bg-gradient-from: rgb(var(--color-bg));
+    --bg-gradient-to: rgb(239 230 216);
+  }
+
+  html, body {
+    background: rgb(var(--color-bg));
+    color: rgb(var(--color-ink));
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* Hard guard: never allow horizontal scroll at the page root */
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, var(--bg-gradient-glow), transparent 60%),
+      linear-gradient(180deg, var(--bg-gradient-from) 0%, var(--bg-gradient-to) 100%);
+    /* Smoother momentum scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  *:focus-visible {
+    outline: 2px solid rgb(var(--color-accent-glow));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  /* Touch targets — make buttons at least 32px clickable on mobile */
+  @media (pointer: coarse) {
+    button, a, [role="button"] { touch-action: manipulation; }
+    /* Avoid iOS tap-highlight blue */
+    * { -webkit-tap-highlight-color: transparent; }
+    /* Prevent zoom on input focus (font-size >= 16px) */
+    input, select, textarea { font-size: 16px; }
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-white/5 bg-bg-surface shadow-tactical;
+  }
+  .panel-head {
+    @apply border-b border-white/5 px-3 sm:px-5 py-2.5 sm:py-3 flex items-baseline justify-between;
+  }
+  .panel-title {
+    @apply font-display text-sm font-semibold uppercase tracking-wider text-ink;
+  }
+  .panel-subtitle {
+    @apply text-[10px] sm:text-[11px] uppercase tracking-widest text-ink-subtle;
+  }
+  .panel-body {
+    @apply p-3 sm:p-5;
+  }
+  .stat-num {
+    @apply font-display text-2xl sm:text-3xl font-bold tabular-nums text-ink;
+  }
+  .stat-num-lg {
+    @apply font-display text-4xl sm:text-5xl font-bold tabular-nums text-accent-glow;
+  }
+  .stat-label {
+    @apply text-[10px] uppercase tracking-[0.18em] text-ink-muted;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-sm border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-ink-muted;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm text-ink-muted hover:bg-white/5 hover:text-ink transition;
+  }
+  .nav-link-active {
+    @apply bg-accent/10 text-accent-glow border-l-2 border-accent;
+  }
+  /* Safe-area helpers for mobile floating elements */
+  .safe-pb { padding-bottom: max(0.75rem, var(--safe-bottom)); }
+  .safe-pt { padding-top: max(0.75rem, var(--safe-top)); }
+}
+
+/* Leaflet map overrides for dark theme */
+.leaflet-container { background: #3a1c08 !important; }
+.leaflet-tile { filter: brightness(0.6) saturate(0.7) hue-rotate(180deg); }
+.leaflet-popup-content-wrapper {
+  background: #5c321a !important;
+  color: #f3ebe0 !important;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px !important;
+  max-width: calc(100vw - 2rem) !important;
+}
+.leaflet-popup-tip { background: #5c321a !important; }
+.leaflet-control-zoom a {
+  background-color: rgba(58, 28, 8, 0.9) !important;
+  color: #f3ebe0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(58, 28, 8, 0.7) !important;
+  color: rgba(243, 235, 224, 0.6) !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a { color: rgba(184, 148, 53, 0.8) !important; }
+.marker-cluster-small { background: rgba(164,118,34,0.4) !important; }
+.marker-cluster-small div { background: rgba(164,118,34,0.8) !important; color: #1f0d00 !important; font-weight: 700 !important; }
+.marker-cluster-medium { background: rgba(164,118,34,0.5) !important; }
+.marker-cluster-medium div { background: rgba(164,118,34,0.9) !important; color: #1f0d00 !important; font-weight: 700 !important; }
+.marker-cluster-large { background: rgba(239,68,68,0.5) !important; }
+.marker-cluster-large div { background: rgba(239,68,68,0.95) !important; color: #fff !important; font-weight: 700 !important; }
+
+/* Recharts: guard against overflow in tight viewports */
+.recharts-wrapper, .recharts-surface { max-width: 100% !important; }
+.recharts-tooltip-wrapper { z-index: 50 !important; max-width: calc(100vw - 1rem) !important; }
