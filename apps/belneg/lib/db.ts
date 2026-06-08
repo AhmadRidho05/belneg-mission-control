@@ -109,21 +109,26 @@ export const kodimSummary = unstable_cache(
   async (): Promise<KodimRow[]> => {
     return qAll<KodimRow>(`
       SELECT
-        k.kodim_id, k.name AS kodim_name, k.kabupaten_kota, k.kabupaten_norm,
-        kd.kodam_id, kd.name AS kodam_name,
-        kr.korem_id, kr.name AS korem_name,
-        k.lat, k.lng,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = k.kabupaten_norm) AS n_sekolah,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = k.kabupaten_norm AND s.akreditasi='A') AS n_akreditasi_a,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = k.kabupaten_norm AND UPPER(s.status_sekolah)='NEGERI') AS n_negeri,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = k.kabupaten_norm AND UPPER(s.status_sekolah)='SWASTA') AS n_swasta
-      FROM dim_kodim k
-      JOIN dim_kodam kd ON kd.kodam_id = k.kodam_id
-      LEFT JOIN dim_korem kr ON kr.korem_id = k.korem_id
+        kodim AS kodim_id,
+        kodim AS kodim_name,
+        kab_kota AS kabupaten_kota,
+        UPPER(kab_kota) AS kabupaten_norm,
+        NULL AS kodam_id,
+        NULL AS kodam_name,
+        NULL AS korem_id,
+        NULL AS korem_name,
+        AVG(lintang) AS lat,
+        AVG(bujur) AS lng,
+        COUNT(*) AS n_sekolah,
+        SUM(CASE WHEN akreditasi = 'A' THEN 1 ELSE 0 END) AS n_akreditasi_a,
+        0 AS n_negeri,
+        0 AS n_swasta
+      FROM kkri_target_kodim
+      GROUP BY kodim, kab_kota
       ORDER BY n_sekolah DESC
     `);
   },
-  ["kodim-summary-v3"],
+  ["kodim-summary-v4"],
   { revalidate: 3600 }
 );
 

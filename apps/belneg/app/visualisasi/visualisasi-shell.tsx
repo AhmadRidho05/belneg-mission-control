@@ -67,7 +67,7 @@ export function VisualisasiShell(p: Props) {
   })), [p.kodam]);
   const kodimOptions = useMemo(() => p.kodim.map((k: any) => ({
     id: k.kodim_id,
-    label: k.kodim_name.replace(/^Kodim\s+\d+\//, ""),
+    label: (k.kodim_name ?? k.kabupaten_kota ?? "Tanpa Kodim").replace(/^Kodim\s+\d+\//, ""),
     sub: `${k.kabupaten_kota ?? "—"} · ${k.kodam_name?.replace(/^Kodam\s+/, "") ?? ""}`,
   })), [p.kodim]);
 
@@ -131,7 +131,7 @@ export function VisualisasiShell(p: Props) {
 
   const kodimItems = p.kodim.map((k: any) => ({
     id: k.kodim_id,
-    label: k.kodim_name.replace(/^Kodim\s+\d+\//, ""),
+    label: (k.kodim_name ?? k.kabupaten_kota ?? "Tanpa Kodim").replace(/^Kodim\s+\d+\//, ""),
     sub: k.kabupaten_kota ?? "—",
     value: k.n_sekolah,
     payload: { kodim_id: k.kodim_id, kab: k.kabupaten_kota, kodam: k.kodam_name },
