@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { qRun, qGet, qAll } from "../../../v1/_lib";
+import { getAdminFromRequest } from "../../../web/_lib";
 
 export const dynamic = "force-dynamic";
 
 // GET — full user detail (profile + reports + GPS history + assignment scope)
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const id = params.id;
 
   const user = await qGet<any>(`
@@ -106,6 +108,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // PATCH — update user fields (approve, reactivate, etc)
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const id = params.id;
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
@@ -130,7 +133,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE — soft delete (set deleted_at)
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const id = params.id;
   const exists = await qGet<{ id: string }>(`SELECT id FROM kkri_users WHERE id = ?`, [id]);
   if (!exists) return NextResponse.json({ error: "not found" }, { status: 404 });

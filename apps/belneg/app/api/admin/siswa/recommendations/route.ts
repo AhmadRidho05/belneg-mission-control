@@ -1,9 +1,10 @@
 // AI Recommendations endpoint — feeds the current /admin/siswa snapshot
 // into Claude Sonnet 4.6 and returns 3 actionable items. In-memory 24h cache
 // per ?focus value so repeated page loads don't burn API budget.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { ok, bad } from "../../../v1/_lib";
+import { getAdminFromRequest } from "../../../web/_lib";
 import { getSiswaStats } from "../../../../admin/siswa/admin-stats";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ const tool: Anthropic.Tool = {
 };
 
 export async function POST(req: NextRequest) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const focus = (req.nextUrl.searchParams.get("focus") || "general").trim();
   const force = req.nextUrl.searchParams.get("force") === "true";
 

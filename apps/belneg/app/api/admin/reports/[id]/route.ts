@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { qRun, qGet } from "../../../v1/_lib";
+import { getAdminFromRequest, getSessionFromRequest } from "../../../web/_lib";
 
 export const dynamic = "force-dynamic";
 
-// GET — fetch full report detail (text bodies) for modal lazy-load
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+// GET — fetch full report detail (text bodies) for modal lazy-load; readable by any authenticated web user
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!await getSessionFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const row = await qGet<any>(`
     SELECT materi, hasil, kendala, situasi_lapangan
     FROM kkri_reports WHERE id = ?
@@ -14,6 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const id = params.id;
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }

@@ -63,7 +63,7 @@ function FlyTo({ target }: { target: { lat: number; lng: number; zoom?: number }
 
 const KODAM_OPTS = ["ALL"] as const;
 
-export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) {
+export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: KodimWithPolitik[]; isAdmin?: boolean }) {
   const router = useRouter();
   const [selected, setSelected] = useState<KodimWithPolitik | null>(null);
   const [colorMode, setColorMode] = useState<"stress" | "politik">("stress");
@@ -152,7 +152,7 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] lg:h-screen flex-col">
       {/* HEADER */}
-      <header className="flex flex-col gap-2 border-b border-white/5 p-4 lg:p-6">
+      <header className="flex flex-col gap-2 border-b border-white/5 p-4 lg:p-6 lg:pr-72 xl:pr-80">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="chip text-accent-glow border-accent/40">● ASSIGNMENT VIEW</span>
           <span className="chip">{fmt(visible.length)} kodim</span>
@@ -230,12 +230,14 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
         <div className="lg:hidden pointer-events-none absolute inset-x-0 bottom-0 z-[420] flex justify-between gap-2 p-3"
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
         >
+          {isAdmin && (
           <button
             onClick={() => setPanelOpen(true)}
             className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-bg-soft/95 px-3.5 py-2.5 text-[11px] font-semibold text-accent-glow shadow-2xl backdrop-blur min-h-[44px]"
           >
             <Filter size={13}/> Filter ({fmt(visible.length)})
           </button>
+          )}
           {selected && (
             <button
               onClick={() => { /* opens via state — selected is what controls right panel */ }}
@@ -247,12 +249,12 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
         </div>
 
         {/* Mobile backdrop for left panel */}
-        {panelOpen && (
+        {isAdmin && panelOpen && (
           <div onClick={() => setPanelOpen(false)} className="lg:hidden absolute inset-0 z-[440] bg-black/50 backdrop-blur-sm"/>
         )}
 
-        {/* LEFT CONTROL PANEL — desktop left side, mobile bottom sheet */}
-        <div className={`pointer-events-none absolute inset-0 z-[460] lg:z-[400] ${panelOpen ? "block" : "hidden lg:block"}`}>
+        {/* LEFT CONTROL PANEL — admin only */}
+        {isAdmin && <div className={`pointer-events-none absolute inset-0 z-[460] lg:z-[400] ${panelOpen ? "block" : "hidden lg:block"}`}>
           <div className="pointer-events-auto absolute inset-x-0 bottom-0 lg:bottom-auto lg:inset-x-auto lg:left-3 lg:top-3 lg:w-72 max-h-[85vh] lg:max-h-[calc(100%-1.5rem)] overflow-y-auto rounded-t-2xl lg:rounded-lg border border-white/10 bg-bg-soft/95 backdrop-blur shadow-2xl"
             style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))" }}>
             <div className="lg:hidden mx-auto pt-2 h-1 w-12 rounded-full bg-white/15"/>
@@ -396,7 +398,7 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* RIGHT DETAIL PANEL — desktop right side, mobile bottom sheet */}
         {selected && (
@@ -498,9 +500,11 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
                           ))}
                         </tbody>
                       </table>
+                      {isAdmin && (
                       <div className="px-2 py-1 text-[9px] text-center border-t border-white/5">
                         <a href="/assignment/koramil-stress" className="text-accent-glow hover:underline">Lihat Stress Index →</a>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -80,7 +80,7 @@ export default function AssignmentTableClient({ rows }: { rows: AssignmentRow[] 
 
   return (
     <div className="space-y-5 p-4 sm:p-6 lg:p-8">
-      <header className="flex flex-col gap-3 border-b border-white/5 pb-4">
+      <header className="flex flex-col gap-3 border-b border-white/5 pb-4 lg:pr-72 xl:pr-80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="chip text-accent-glow border-accent/40">● ASSIGNMENT TABLE</span>

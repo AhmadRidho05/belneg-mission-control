@@ -1,9 +1,12 @@
 import { qAll } from "../../api/v1/_lib";
 import ReportsClient from "./reports-client";
+import { getWebSession } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminReportsPage() {
+  const session = await getWebSession();
+  const isAdmin = session?.role === "admin";
   // Fetch ALL reports with denormalized join fields for client-side filtering.
   // For an admin tool, 3k+ rows is fine (~1.5MB JSON). Subsequent filters are
   // instant — no API roundtrip.
@@ -34,5 +37,5 @@ export default async function AdminReportsPage() {
     LEFT JOIN dim_kodam kdm ON kdm.kodam_id = kdi.kodam_id
     ORDER BY r.submitted_at DESC
   `);
-  return <ReportsClient reports={rows} />;
+  return <ReportsClient reports={rows} isAdmin={isAdmin} />;
 }

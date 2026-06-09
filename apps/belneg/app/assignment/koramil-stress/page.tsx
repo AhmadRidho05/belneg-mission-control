@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getWebSession } from "@/lib/server-auth";
 import { qAll, qGet } from "../../api/v1/_lib";
 import KoramilStressClient from "./koramil-stress-client";
 
@@ -13,6 +15,8 @@ export const dynamic = "force-dynamic";
 // to # sibling koramils AND its operational data is incomplete AND it sits
 // in a remote bentuk wilayah.
 export default async function KoramilStressPage() {
+  const session = await getWebSession();
+  if (!session || session.role !== "admin") redirect("/dashboard");
   const [stats, perKoramil, perKodam, byBentuk] = await Promise.all([
     qGet<any>(`
       SELECT

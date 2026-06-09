@@ -45,7 +45,7 @@ function extractPangkat(name: string): string | null {
 const PAGE_SIZE = 100;
 
 // ─────────────────────────── Main ───────────────────────────
-export default function ReportsClient({ reports: initial }: { reports: Report[] }) {
+export default function ReportsClient({ reports: initial, isAdmin = false }: { reports: Report[]; isAdmin?: boolean }) {
   const [reports, setReports] = useState(initial);
   const [selected, setSelected] = useState<Report | null>(null);
 
@@ -393,7 +393,7 @@ export default function ReportsClient({ reports: initial }: { reports: Report[] 
         )}
       </div>
 
-      {selected && <DetailModal r={selected} onClose={() => setSelected(null)} onStatusChange={changeStatus} />}
+      {selected && <DetailModal r={selected} onClose={() => setSelected(null)} onStatusChange={changeStatus} isAdmin={isAdmin} />}
     </div>
   );
 }
@@ -514,7 +514,7 @@ function MultiSearchable({ label, selected, onChange, options, placeholder }: {
 }
 
 // ─────────────────────────── Detail modal (unchanged from before) ───────────────────────────
-function DetailModal({ r, onClose, onStatusChange }: { r: Report; onClose: () => void; onStatusChange: (r: Report, s: string) => void }) {
+function DetailModal({ r, onClose, onStatusChange, isAdmin }: { r: Report; onClose: () => void; onStatusChange: (r: Report, s: string) => void; isAdmin: boolean }) {
   const [photos, setPhotos] = useState<{ url: string }[]>([]);
   const [body, setBody] = useState<{ materi: string | null; hasil: string | null; kendala: string | null; situasi_lapangan: string | null } | null>(null);
   useEffect(() => {
@@ -574,18 +574,27 @@ function DetailModal({ r, onClose, onStatusChange }: { r: Report; onClose: () =>
         </div>
 
         <div className="flex items-center gap-2 border-t border-white/5 p-3 flex-wrap">
-          {(["approved", "rejected", "reviewed", "submitted"] as const).map(s => (
-            <button key={s} onClick={() => onStatusChange(r, s)} disabled={r.status === s}
-              className={`flex-1 rounded-md px-3 py-2 text-[11px] uppercase tracking-widest font-semibold transition ${
-                r.status === s
-                  ? "bg-white/10 text-ink-muted cursor-default"
-                  : s === "approved" ? "bg-ok/20 text-ok border border-ok/40 hover:bg-ok/30"
-                  : s === "rejected" ? "bg-crit/20 text-crit border border-crit/40 hover:bg-crit/30"
-                  : "bg-white/5 text-ink hover:bg-white/10"
-              }`}>
-              {STATUS_LABEL[s] || s}
-            </button>
-          ))}
+          {isAdmin ? (
+            (["approved", "rejected", "reviewed", "submitted"] as const).map(s => (
+              <button key={s} onClick={() => onStatusChange(r, s)} disabled={r.status === s}
+                className={`flex-1 rounded-md px-3 py-2 text-[11px] uppercase tracking-widest font-semibold transition ${
+                  r.status === s
+                    ? "bg-white/10 text-ink-muted cursor-default"
+                    : s === "approved" ? "bg-ok/20 text-ok border border-ok/40 hover:bg-ok/30"
+                    : s === "rejected" ? "bg-crit/20 text-crit border border-crit/40 hover:bg-crit/30"
+                    : "bg-white/5 text-ink hover:bg-white/10"
+                }`}>
+                {STATUS_LABEL[s] || s}
+              </button>
+            ))
+          ) : (
+            <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <span className="uppercase tracking-widest">Status:</span>
+              <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${STATUS_STYLE[r.status]}`}>
+                {STATUS_LABEL[r.status] || r.status}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

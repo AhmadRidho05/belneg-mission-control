@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { AppChrome } from "@/components/app-chrome";
 import { THEME_STORAGE_KEY } from "@/components/top-actions";
+import { getWebSession } from "@/lib/server-auth";
 
 // Runs before hydration so the saved theme applies on first paint (no flash of
 // the wrong theme). Keep THEME_STORAGE_KEY in sync with components/top-actions.tsx.
@@ -40,7 +41,10 @@ export const viewport: Viewport = {
   themeColor: "#2a1300",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await getWebSession();
+  const role = session?.role ?? null;
+
   return (
     <html lang="id">
       <body>
@@ -56,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
 
         <div className="min-h-[100dvh] lg:min-h-screen">
-          <AppChrome>{children}</AppChrome>
+          <AppChrome role={role}>{children}</AppChrome>
         </div>
       </body>
     </html>

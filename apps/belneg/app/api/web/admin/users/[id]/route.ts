@@ -1,13 +1,14 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import type { InValue } from "@libsql/client";
-import { qGet, qRun, ok, bad } from "../../../_lib";
+import { qGet, qRun, ok, bad, getAdminFromRequest } from "../../../_lib";
 
 export const runtime = "nodejs";
 
 type Ctx = { params: { id: string } };
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const { id } = params;
   let body: Record<string, unknown>;
   try {
@@ -50,7 +51,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 }
 
 // Soft-delete: users table has no deleted_at, so we deactivate + reject.
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
+export async function DELETE(req: NextRequest, { params }: Ctx) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const { id } = params;
   const exists = await qGet<{ id: string }>("SELECT id FROM users WHERE id = ?", [id]);
   if (!exists) return NextResponse.json({ error: "not found" }, { status: 404 });

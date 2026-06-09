@@ -1,12 +1,14 @@
 // POST /api/admin/users — create new KKRI Pembina user (admin-issued)
 import { NextRequest, NextResponse } from "next/server";
 import { qGet, qRun, newId, normalizeContact } from "../../v1/_lib";
+import { getAdminFromRequest } from "../../web/_lib";
 
 export const dynamic = "force-dynamic";
 
 const ALLOWED_ROLES = new Set(["KODAM", "KOREM", "KODIM", "KORAMIL", "ADMIN"]);
 
 export async function POST(req: NextRequest) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
 

@@ -39,7 +39,7 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
 
   return (
     <div className="px-5 py-6 space-y-6 max-w-7xl mx-auto">
-      <header>
+      <header className="lg:pr-56">
         <SubNav active="koramil-stress" />
         <div className="flex items-center gap-3 mt-5">
           <Flame className="text-amber-400" size={26} />

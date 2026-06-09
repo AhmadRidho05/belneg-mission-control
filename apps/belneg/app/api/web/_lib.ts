@@ -3,7 +3,7 @@
 import "server-only";
 import { createClient, type Client, type InValue } from "@libsql/client";
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { unstable_noStore as noStore } from "next/cache";
 
 // ───────────── DB (reuses same Turso instance as v1/v2) ─────────────
@@ -98,3 +98,17 @@ export function setWebTokenCookie(res: NextResponse, token: string): void {
 export const ok = (data: unknown, init?: ResponseInit) => NextResponse.json(data, init);
 export const bad = (msg: string, status = 400) =>
   NextResponse.json({ error: msg }, { status });
+
+export async function getAdminFromRequest(req: NextRequest): Promise<WebTokenPayload | null> {
+  const token = req.cookies.get(WEB_TOKEN_COOKIE)?.value;
+  if (!token) return null;
+  const payload = await verifyWebToken(token);
+  if (!payload || payload.role !== "admin") return null;
+  return payload;
+}
+
+export async function getSessionFromRequest(req: NextRequest): Promise<WebTokenPayload | null> {
+  const token = req.cookies.get(WEB_TOKEN_COOKIE)?.value;
+  if (!token) return null;
+  return verifyWebToken(token);
+}

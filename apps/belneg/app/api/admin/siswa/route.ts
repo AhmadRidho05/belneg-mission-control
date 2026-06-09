@@ -1,10 +1,12 @@
 // Paginated explorer for the /admin/siswa dashboard.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { qAll, ok } from "../../v1/_lib";
+import { getAdminFromRequest } from "../../web/_lib";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const q             = (sp.get("q")         || "").trim();
   const school        = (sp.get("school")    || "").trim();

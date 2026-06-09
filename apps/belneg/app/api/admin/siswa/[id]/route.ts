@@ -1,10 +1,12 @@
 // Full user bundle for /admin/siswa/[id] detail page.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { qAll, qGet, ok, bad } from "../../../v1/_lib";
+import { getAdminFromRequest } from "../../../web/_lib";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403 });
   const { id } = await ctx.params;
 
   const user = await qGet<any>(

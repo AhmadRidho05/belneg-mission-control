@@ -1,23 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LogIn } from "lucide-react";
+import { LogIn, Send, KeyRound, RefreshCw } from "lucide-react";
+
+type Stage = "request" | "verify";
+
+const RESEND_COOLDOWN = 60; // seconds
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const notice = searchParams.get("notice");
 
+  const [stage, setStage] = useState<Stage>("request");
+
+  // Stage 1 fields
   const [email, setEmail] = useState("");
   const [nrp, setNrp] = useState("");
+
+  // Stage 2 field
+  const [otp, setOtp] = useState("");
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Resend cooldown counter (seconds remaining)
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const requestOtp = async () => {
     if (!email.trim() || !nrp.trim()) {
       setError("Lengkapi Email/No WhatsApp dan NRP terlebih dahulu.");
       return;
@@ -25,17 +44,45 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/web/auth/login", {
+      const res = await fetch("/api/web/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email_or_phone: email, nrp }),
+        body: JSON.stringify({ email_or_phone: email.trim().toLowerCase(), nrp: nrp.trim() }),
       });
-      const data = await res.json() as { ok?: boolean; role?: string; error?: string; message?: string };
+      const data = await res.json() as { ok?: boolean; error?: string; message?: string };
       if (!res.ok) {
         if (data.error === "pending") setError("Akun Anda masih menunggu approval admin.");
         else if (data.error === "rejected") setError("Akun Anda ditolak atau dinonaktifkan.");
         else if (data.error === "inactive") setError("Akun Anda tidak aktif. Hubungi admin.");
-        else setError(data.error ?? "Login gagal.");
+        else setError(data.message ?? data.error ?? "Gagal mengirim OTP.");
+        return;
+      }
+      setOtp("");
+      setStage("verify");
+      setCooldown(RESEND_COOLDOWN);
+    } catch {
+      setError("Terjadi kesalahan koneksi. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!otp.trim()) {
+      setError("Masukkan kode OTP terlebih dahulu.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/web/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_or_phone: email.trim().toLowerCase(), otp_code: otp.trim() }),
+      });
+      const data = await res.json() as { ok?: boolean; role?: string; error?: string; message?: string };
+      if (!res.ok) {
+        setError(data.message ?? data.error ?? "Verifikasi gagal.");
         return;
       }
       router.push(`/dashboard?role=${data.role}`);
@@ -46,61 +93,134 @@ export default function LoginPage() {
     }
   };
 
+  const handleResend = async () => {
+    if (cooldown > 0 || loading) return;
+    setError(null);
+    setOtp("");
+    await requestOtp();
+  };
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (stage === "request") requestOtp();
+    else verifyOtp();
+  };
+
   return (
     <AuthShell>
       <h1 className="font-display text-2xl font-bold text-ink">Login</h1>
       <p className="mt-1 text-[12px] text-ink-muted">
-        Masuk ke BELNEG Mission Control menggunakan Email/No WhatsApp dan NRP Anda.
+        {stage === "request"
+          ? "Masuk ke BELNEG Mission Control menggunakan Email/No WhatsApp dan NRP Anda."
+          : "Masukkan kode OTP yang sudah dikirim."}
       </p>
 
-      {notice === "registered_pending" && (
+      {notice === "registered_pending" && stage === "request" && (
         <div className="mt-4 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5 text-[12px] leading-relaxed text-warn">
           Pendaftaran berhasil. Akun Anda berstatus <strong>pending</strong> dan baru bisa login setelah disetujui admin.
         </div>
       )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <Field label="Email / No WhatsApp">
-          <input
-            required
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="nama@kkri.id atau 0812xxxxxxxx"
-            className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </Field>
-        <Field label="NRP">
-          <input
-            required
-            value={nrp}
-            onChange={e => setNrp(e.target.value)}
-            placeholder="Nomor Registrasi Pokok"
-            className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </Field>
+        {stage === "request" ? (
+          <>
+            <Field label="Email / No WhatsApp">
+              <input
+                required
+                autoFocus
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="nama@kkri.id atau 0812xxxxxxxx"
+                className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </Field>
+            <Field label="NRP">
+              <input
+                required
+                value={nrp}
+                onChange={e => setNrp(e.target.value)}
+                placeholder="Nomor Registrasi Pokok"
+                className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </Field>
 
-        {error && <div className="text-[12px] text-crit">{error}</div>}
+            {error && <div className="text-[12px] text-crit">{error}</div>}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition disabled:opacity-60"
-        >
-          <LogIn size={14} /> {loading ? "Memproses…" : "Masuk"}
-        </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition disabled:opacity-60"
+            >
+              <Send size={14} /> {loading ? "Mengirim…" : "Kirim OTP"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="rounded-md border border-accent/20 bg-accent/5 px-3 py-2.5 text-[12px] leading-relaxed text-accent-glow">
+              Kode OTP demo sudah dibuat. Cek terminal server untuk mendapatkan kode.
+            </div>
+
+            <Field label="Kode OTP">
+              <input
+                required
+                autoFocus
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="6 digit kode OTP"
+                maxLength={6}
+                inputMode="numeric"
+                pattern="\d{6}"
+                className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle tracking-[0.3em] focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </Field>
+
+            {error && <div className="text-[12px] text-crit">{error}</div>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition disabled:opacity-60"
+            >
+              <LogIn size={14} /> {loading ? "Memverifikasi…" : "Verifikasi & Masuk"}
+            </button>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => { setStage("request"); setError(null); setOtp(""); }}
+                className="text-[12px] text-ink-muted hover:text-ink transition"
+              >
+                ← Ubah Email / NRP
+              </button>
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={cooldown > 0 || loading}
+                className="inline-flex items-center gap-1.5 text-[12px] text-accent-glow hover:underline transition disabled:opacity-50 disabled:no-underline"
+              >
+                <RefreshCw size={11} />
+                {cooldown > 0 ? `Kirim Ulang (${cooldown}s)` : "Kirim Ulang OTP"}
+              </button>
+            </div>
+          </>
+        )}
       </form>
 
-      <p className="mt-5 text-center text-[12px] text-ink-muted">
-        Belum punya akun?{" "}
-        <Link href="/auth/register" className="text-accent-glow hover:underline">
-          Daftar
-        </Link>
-      </p>
-      <p className="mt-2 text-center text-[12px]">
-        <Link href="/" className="text-ink-subtle hover:text-ink">
-          ← Kembali ke beranda
-        </Link>
-      </p>
+      {stage === "request" && (
+        <>
+          <p className="mt-5 text-center text-[12px] text-ink-muted">
+            Belum punya akun?{" "}
+            <Link href="/auth/register" className="text-accent-glow hover:underline">
+              Daftar
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-[12px]">
+            <Link href="/" className="text-ink-subtle hover:text-ink">
+              ← Kembali ke beranda
+            </Link>
+          </p>
+        </>
+      )}
     </AuthShell>
   );
 }

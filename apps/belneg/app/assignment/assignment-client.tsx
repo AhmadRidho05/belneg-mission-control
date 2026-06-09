@@ -17,14 +17,16 @@ const AssignmentMap = dynamic(() => import("./assignment-map"), {
   ),
 });
 
-export default function AssignmentClient({ kodim }: { kodim: KodimWithPolitik[] }) {
+export default function AssignmentClient({ kodim, isAdmin = false }: { kodim: KodimWithPolitik[]; isAdmin?: boolean }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="px-5 pt-4 shrink-0">
-        <SubNav active="kodim-load" />
-      </div>
+      {isAdmin && (
+        <div className="px-5 pt-4 shrink-0 lg:pr-72 xl:pr-80">
+          <SubNav active="kodim-load" />
+        </div>
+      )}
       <div className="flex-1 min-h-0">
-        <AssignmentMap kodim={kodim} />
+        <AssignmentMap kodim={kodim} isAdmin={isAdmin} />
       </div>
     </div>
   );
