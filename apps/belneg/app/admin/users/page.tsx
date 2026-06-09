@@ -1,29 +1,40 @@
-import { qAll } from "../../api/v1/_lib";
+import { qAll } from "../../api/web/_lib";
 import UsersClient from "./users-client";
-import { getAdminStats } from "./admin-stats";
 
 export const dynamic = "force-dynamic";
 
+export type WebUser = {
+  id: string;
+  full_name: string;
+  email_or_phone: string;
+  nrp: string | null;
+  jabatan: string | null;
+  unit_type: string | null;
+  unit_name: string | null;
+  role: string;
+  status: string;
+  is_active: number;
+  created_at: string;
+  updated_at: string | null;
+};
+
 export default async function AdminUsersPage() {
-  const [rows, allUnits, stats] = await Promise.all([
-    qAll<any>(`
-      SELECT u.id, u.email, u.phone, u.full_name, u.nrp, u.role, u.unit_id, u.is_active,
-             u.created_at, u.approved_at, u.last_login_at,
-             (SELECT name FROM dim_kodim WHERE kodim_id = u.unit_id) AS kodim_name,
-             (SELECT name FROM dim_korem WHERE korem_id = u.unit_id) AS korem_name,
-             (SELECT name FROM dim_kodam WHERE kodam_id = u.unit_id) AS kodam_name,
-             (SELECT COUNT(*) FROM kkri_reports r WHERE r.user_id = u.id) AS n_reports
-      FROM kkri_users u
-      WHERE u.deleted_at IS NULL
-      ORDER BY u.is_active, u.created_at DESC
-    `),
-    qAll<any>(`
-      SELECT kodim_id AS id, name, 'KODIM' AS kind FROM dim_kodim
-      UNION ALL SELECT korem_id, name, 'KOREM' FROM dim_korem WHERE is_berdiri_sendiri = 0
-      UNION ALL SELECT kodam_id, name, 'KODAM' FROM dim_kodam
-      ORDER BY kind, name
-    `),
-    getAdminStats(),
-  ]);
-  return <UsersClient users={rows} units={allUnits} stats={stats} />;
+  let users: WebUser[] = [];
+  let fetchError: string | null = null;
+
+  try {
+    users = await qAll<WebUser>(`
+      SELECT id, full_name, email_or_phone, nrp, jabatan, unit_type, unit_name,
+             role, status, is_active, created_at, updated_at
+      FROM users
+      ORDER BY
+        CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+        created_at DESC
+    `);
+  } catch (err) {
+    fetchError =
+      err instanceof Error ? err.message : "Gagal memuat data user dari database.";
+  }
+
+  return <UsersClient users={users} error={fetchError} />;
 }

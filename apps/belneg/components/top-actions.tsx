@@ -2,27 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Globe, Sun, Moon, Bell, LogOut, UserPlus } from "lucide-react";
+import { Globe, Sun, Moon, Bell, LogOut, UserPlus, FileText, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { simulateLogout, listSimAccounts, WEB_ACCOUNTS_STORAGE_KEY } from "@/lib/auth-sim";
-
-// Mirrors the shape returned by GET /api/notifications (app/api/notifications/route.ts).
-// TODO(integration): once the APK/LMS notification API exists, point this fetch at it
-// (or proxy it through that route) — the shape here is designed to match 1:1.
-type NotificationItem = {
-  id: string;
-  title: string;
-  body: string;
-  category: "report" | "approval" | "siswa" | "system";
-  severity: "info" | "warning" | "critical";
-  createdAt: string;
-  readAt: string | null;
-};
+import { simulateLogout } from "@/lib/auth-sim";
+import type { NotifItem, NotifType } from "@/app/api/notifications/route";
 
 type NotifState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; items: NotificationItem[] };
+  | { status: "ready"; count: number; items: NotifItem[] };
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -35,10 +23,15 @@ function relativeTime(iso: string): string {
   return `${days} hari lalu`;
 }
 
+function typeIcon(type: NotifType) {
+  if (type === "user_pending") return <UserPlus size={11} className="text-warn shrink-0 mt-px" />;
+  if (type === "report_new")   return <FileText  size={11} className="text-accent-glow shrink-0 mt-px" />;
+  return                              <Shield    size={11} className="text-ok shrink-0 mt-px" />;
+}
+
 const ICON_BTN =
   "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-bg-soft/60 text-ink-muted backdrop-blur-sm transition hover:bg-white/5 hover:text-ink";
 
-// Keep in sync with the no-flash bootstrap script in app/layout.tsx.
 export const THEME_STORAGE_KEY = "belneg-theme";
 type Theme = "dark" | "light";
 
@@ -49,52 +42,38 @@ function applyTheme(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
-/**
- * Top-right utility action cluster for the dashboard content area.
- * Theme (light/dark) is fully wired to CSS variables in globals.css + localStorage.
- * Language/notification/logout remain UI-only for now (see inline TODOs).
- */
 export function TopActions() {
   const [lang, setLang] = useState<"ID" | "EN">("ID");
-  // Mirrors whatever the no-flash bootstrap script already applied to <html>,
-  // so the icon matches on first paint instead of always assuming "dark".
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof document === "undefined") return "dark";
     return document.documentElement.classList.contains("light") ? "light" : "dark";
   });
-  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifOpen, setNotifOpen]   = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [notifState, setNotifState] = useState<NotifState>({ status: "loading" });
-  const [pendingRegistrations, setPendingRegistrations] = useState(0);
 
-  const notifRef = useRef<HTMLDivElement>(null);
+  const notifRef  = useRef<HTMLDivElement>(null);
   const logoutRef = useRef<HTMLDivElement>(null);
 
-  // Real signal (not placeholder/dummy data): how many self-registered Web
-  // Mission Control accounts are waiting for admin approval, sourced straight
-  // from the localStorage simulation in lib/auth-sim.ts (see Manage User).
-  useEffect(() => {
-    const refresh = () => setPendingRegistrations(listSimAccounts().filter((a) => a.status === "pending").length);
-    refresh();
-    const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.key === WEB_ACCOUNTS_STORAGE_KEY) refresh();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [notifOpen]);
-
-  // Fetch on mount, and again whenever the dropdown is opened (placeholder store
-  // can be seeded manually via POST /api/notifications while the dashboard is open).
+  // Fetch on mount and whenever the dropdown is opened.
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setNotifState((s) => (s.status === "ready" ? s : { status: "loading" }));
+      if (notifState.status !== "ready") {
+        setNotifState({ status: "loading" });
+      }
       try {
-        const res = await fetch("/api/notifications", { cache: "no-store" });
+        const res  = await fetch("/api/notifications", { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!cancelled) setNotifState({ status: "ready", items: Array.isArray(data?.notifications) ? data.notifications : [] });
+        const data = await res.json() as { ok?: boolean; count?: number; items?: NotifItem[] };
+        if (!cancelled) {
+          setNotifState({
+            status: "ready",
+            count:  typeof data.count === "number" ? data.count : 0,
+            items:  Array.isArray(data.items) ? data.items : [],
+          });
+        }
       } catch {
         if (!cancelled) setNotifState({ status: "error", message: "Gagal memuat notifikasi." });
       }
@@ -102,22 +81,18 @@ export function TopActions() {
 
     load();
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifOpen]);
 
   useEffect(() => {
     if (!notifOpen && !logoutOpen) return;
-
     const onDocClick = (e: MouseEvent) => {
-      if (notifOpen && !notifRef.current?.contains(e.target as Node)) setNotifOpen(false);
+      if (notifOpen  && !notifRef.current?.contains(e.target as Node))  setNotifOpen(false);
       if (logoutOpen && !logoutRef.current?.contains(e.target as Node)) setLogoutOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setNotifOpen(false);
-        setLogoutOpen(false);
-      }
+      if (e.key === "Escape") { setNotifOpen(false); setLogoutOpen(false); }
     };
-
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -126,9 +101,6 @@ export function TopActions() {
     };
   }, [notifOpen, logoutOpen]);
 
-  // TEMPORARY AUTH SIMULATION (see lib/auth-sim.ts) — clears the localStorage
-  // session and sends the visitor to the landing page with a clean URL (no
-  // `?role=` left over from the simulated dashboard view).
   const handleLogout = () => {
     simulateLogout();
     window.location.href = "/";
@@ -138,19 +110,17 @@ export function TopActions() {
     setTheme((current) => {
       const next: Theme = current === "dark" ? "light" : "dark";
       applyTheme(next);
-      try {
-        window.localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch {
-        // localStorage can throw in private-browsing/sandboxed contexts — theme still
-        // applies for this session, it just won't persist across reloads.
-      }
+      try { window.localStorage.setItem(THEME_STORAGE_KEY, next); } catch { /* private browsing */ }
       return next;
     });
   };
 
+  const badgeCount = notifState.status === "ready" ? notifState.count : 0;
+
   return (
     <div className="fixed right-4 top-4 z-30 hidden items-center gap-1.5 lg:right-6 lg:flex">
-      {/* Language switch (ID/EN dummy) */}
+
+      {/* Language toggle */}
       <button
         type="button"
         onClick={() => setLang((l) => (l === "ID" ? "EN" : "ID"))}
@@ -162,7 +132,7 @@ export function TopActions() {
         <span className="text-[10px] font-semibold uppercase tracking-wider">{lang}</span>
       </button>
 
-      {/* Light/dark mode toggle — wired to CSS vars in globals.css + localStorage */}
+      {/* Theme toggle */}
       <button
         type="button"
         onClick={toggleTheme}
@@ -173,8 +143,7 @@ export function TopActions() {
         {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
       </button>
 
-      {/* Notifications — backed by GET/POST /api/notifications (placeholder store
-          until the APK/LMS notification API exists; see TODO in that route). */}
+      {/* Notifications bell */}
       <div className="relative" ref={notifRef}>
         <button
           type="button"
@@ -185,70 +154,71 @@ export function TopActions() {
           className={cn(ICON_BTN, "relative")}
         >
           <Bell size={16} />
-          {(pendingRegistrations > 0 || (notifState.status === "ready" && notifState.items.some(n => !n.readAt))) && (
-            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent-glow" />
+          {badgeCount > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent-glow px-1 text-[9px] font-bold leading-none text-bg">
+              {badgeCount > 99 ? "99+" : badgeCount}
+            </span>
           )}
         </button>
 
         {notifOpen && (
-          <div className="absolute right-0 top-[calc(100%+0.5rem)] w-72 overflow-hidden rounded-lg border border-white/10 bg-bg-surface shadow-tactical">
-            <div className="border-b border-white/5 px-3.5 py-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-ink">Notifikasi</div>
-              <div className="text-[10px] uppercase tracking-wider text-ink-subtle">
+          <div className="absolute right-0 top-[calc(100%+0.5rem)] w-80 overflow-hidden rounded-lg border border-white/10 bg-bg-surface shadow-tactical">
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/5 px-3.5 py-2.5">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-ink">
+                Notifikasi
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-ink-subtle">
                 {notifState.status === "ready"
-                  ? `${notifState.items.length + (pendingRegistrations > 0 ? 1 : 0)} item`
+                  ? `${notifState.count} item`
                   : "Memuat…"}
-              </div>
+              </span>
             </div>
 
-            {/* Real signal — sourced live from the localStorage web-account
-                registry (lib/auth-sim.ts), NOT placeholder/dummy data. Shown
-                whenever a self-registered account is awaiting admin review. */}
-            {pendingRegistrations > 0 && (
-              <Link
-                href="/admin/users"
-                onClick={() => setNotifOpen(false)}
-                className="block border-b border-white/5 bg-warn/5 px-3.5 py-2.5 transition hover:bg-warn/10"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-[12px] font-medium text-ink">
-                    <UserPlus size={12} className="text-warn" /> User baru menunggu approval
-                  </span>
-                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-glow" />
-                </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-ink-muted">
-                  {pendingRegistrations} akun menunggu persetujuan di Manage User.
-                </div>
-              </Link>
-            )}
-
+            {/* Loading */}
             {notifState.status === "loading" && (
-              <div className="px-3.5 py-6 text-center text-[11px] text-ink-subtle">Memuat notifikasi…</div>
+              <div className="px-3.5 py-6 text-center text-[11px] text-ink-subtle">
+                Memuat notifikasi…
+              </div>
             )}
 
+            {/* Error */}
             {notifState.status === "error" && (
               <div className="px-3.5 py-6 text-center text-[11px] leading-snug text-ink-muted">
                 {notifState.message}
-                <br />Coba lagi beberapa saat lagi.
+                <br />Coba lagi beberapa saat.
               </div>
             )}
 
-            {notifState.status === "ready" && notifState.items.length === 0 && pendingRegistrations === 0 && (
+            {/* Empty */}
+            {notifState.status === "ready" && notifState.items.length === 0 && (
               <div className="px-3.5 py-6 text-center text-[11px] leading-snug text-ink-muted">
-                Belum ada notifikasi.
+                Tidak ada notifikasi aktif.
               </div>
             )}
 
+            {/* Items */}
             {notifState.status === "ready" && notifState.items.length > 0 && (
-              <ul className="max-h-72 overflow-y-auto">
+              <ul className="max-h-80 overflow-y-auto divide-y divide-white/5">
                 {notifState.items.map((n) => (
-                  <li key={n.id} className="border-b border-white/5 px-3.5 py-2.5 last:border-0 hover:bg-white/5">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[12px] font-medium text-ink">{n.title}</span>
-                      {!n.readAt && <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-glow" />}
-                    </div>
-                    <div className="mt-0.5 text-[11px] leading-snug text-ink-muted">{n.body}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-wider text-ink-subtle">{relativeTime(n.createdAt)}</div>
+                  <li key={n.id}>
+                    <Link
+                      href={n.href}
+                      onClick={() => setNotifOpen(false)}
+                      className="flex items-start gap-2.5 px-3.5 py-2.5 transition hover:bg-white/5"
+                    >
+                      {typeIcon(n.type)}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-medium text-ink">{n.title}</div>
+                        <div className="mt-0.5 text-[11px] leading-snug text-ink-muted line-clamp-2">
+                          {n.message}
+                        </div>
+                        <div className="mt-1 text-[10px] uppercase tracking-wider text-ink-subtle">
+                          {relativeTime(n.created_at)}
+                        </div>
+                      </div>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -257,7 +227,7 @@ export function TopActions() {
         )}
       </div>
 
-      {/* Logout — clears the simulated auth session, see handleLogout */}
+      {/* Logout */}
       <div className="relative" ref={logoutRef}>
         <button
           type="button"
@@ -274,7 +244,7 @@ export function TopActions() {
           <div className="absolute right-0 top-[calc(100%+0.5rem)] w-60 overflow-hidden rounded-lg border border-white/10 bg-bg-surface p-3.5 shadow-tactical">
             <div className="text-[12px] font-medium text-ink">Keluar dari BELNEG?</div>
             <div className="mt-1 text-[11px] leading-snug text-ink-muted">
-              Sesi simulasi akan dihapus dan kamu akan kembali ke beranda.
+              Sesi akan dihapus dan kamu akan kembali ke beranda.
             </div>
             <div className="mt-3 flex justify-end gap-2">
               <button

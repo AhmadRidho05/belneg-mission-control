@@ -42,6 +42,12 @@ function militaryIcon(tipe: "KODAM" | "KOREM" | "KODIM", koramilCount = 0): L.Di
 const BENTUK_OPTIONS = ["SMA", "SMK", "MA", "MAK"] as const;
 const MIL_OPTIONS = ["KODAM", "KOREM", "KODIM"] as const;
 
+const INDONESIA_CENTER: [number, number] = [-2.5, 118.0];
+const INDONESIA_BOUNDS: [[number, number], [number, number]] = [
+  [-11.5, 94.0],   // southwest
+  [6.5,  141.5],   // northeast
+];
+
 export default function MapView({ schools, military, koramilByKodim = {} }: { schools: MapSchoolPoint[]; military: MapMilitaryPoint[]; koramilByKodim?: Record<string, number> }) {
   const [layers, setLayers] = useState({
     SMA: true, SMK: true, MA: true, MAK: true,
@@ -87,8 +93,12 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
   return (
     <div className="relative h-full w-full">
       <MapContainer
-        center={[-2.5, 118]}
+        center={INDONESIA_CENTER}
         zoom={5}
+        minZoom={4}
+        maxBounds={INDONESIA_BOUNDS}
+        maxBoundsViscosity={1.0}
+        worldCopyJump={false}
         scrollWheelZoom={true}
         className="absolute inset-0"
         preferCanvas={true}
@@ -98,6 +108,7 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
           attribution='&copy; OpenStreetMap &copy; CARTO'
           subdomains="abcd"
           maxZoom={19}
+          noWrap={true}
         />
 
         {/* School layer (clustered via leaflet.markercluster directly) */}

@@ -1,94 +1,127 @@
-// Notifications feed for the dashboard's TopActions bell.
+// GET /api/notifications — aggregates actionable items from live Turso tables.
+// No notifications table needed: items are derived directly from source data.
 //
-// TODO(integration): the real source for these notifications is the mobile
-// APK / LMS backend (laporan masuk, approval pembina, aktivitas siswa, dst).
-// That API does not exist yet, so this route currently serves an in-memory
-// placeholder store — it returns an EMPTY list by default and is wired up
-// purely so the dashboard contract (shape + endpoints) is ready to swap to
-// the real integration later without touching the UI.
+// Sources:
+//   users        → web accounts with status = 'pending'
+//   kkri_reports → field reports with status = 'submitted' (unreviewed, last 14 days)
+//   kkri_users   → Pembina accounts with is_active = 0 AND approved_at IS NULL
 //
-// `POST` exists only so this contract can be exercised manually while the
-// real integration is pending — e.g.
-//   curl -X POST http://localhost:3000/api/notifications \
-//     -H "Content-Type: application/json" \
-//     -d '{"title":"Laporan baru","body":"KODIM 0501/BS mengirim laporan mingguan","category":"report"}'
-//
-// Do NOT treat the seeded/posted items here as real data — there is no
-// database table backing this yet (intentionally; see TODO above).
-
-import { NextRequest, NextResponse } from "next/server";
+// Uses Promise.allSettled so a missing/broken table degrades gracefully
+// (returns empty for that source) instead of crashing the whole endpoint.
+import "server-only";
+import { NextResponse } from "next/server";
+import { qAll } from "../v1/_lib";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-export type NotificationCategory = "report" | "approval" | "siswa" | "system";
-export type NotificationSeverity = "info" | "warning" | "critical";
+export type NotifType = "user_pending" | "report_new" | "pembina_pending";
 
-export type NotificationItem = {
+export type NotifItem = {
   id: string;
+  type: NotifType;
   title: string;
-  body: string;
-  category: NotificationCategory;
-  severity: NotificationSeverity;
-  createdAt: string; // ISO 8601
-  readAt: string | null;
+  message: string;
+  href: string;
+  created_at: string;
 };
 
-const CATEGORIES: NotificationCategory[] = ["report", "approval", "siswa", "system"];
-const SEVERITIES: NotificationSeverity[] = ["info", "warning", "critical"];
-
-// In-memory placeholder store (resets on server restart / per-instance in
-// serverless). Intentionally NOT persisted to Turso — see TODO at top of file.
-const store: NotificationItem[] = [];
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
 export async function GET() {
-  const sorted = [...store].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const [webUsersResult, reportsResult, pembinasResult] = await Promise.allSettled([
+    // 1. Web MC accounts awaiting approval
+    qAll<{ id: string; full_name: string; created_at: string }>(`
+      SELECT id, full_name, created_at
+      FROM users
+      WHERE status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 30
+    `),
 
-  return NextResponse.json({
-    notifications: sorted,
-    unreadCount: sorted.filter(n => !n.readAt).length,
-    source: "placeholder", // becomes "apk-lms" once the real integration lands
-  });
-}
+    // 2. Field reports submitted but not yet reviewed (last 14 days)
+    qAll<{
+      id: string;
+      jenis_kegiatan: string | null;
+      sekolah_npsn: string | null;
+      submitted_at: string | null;
+      user_full_name: string | null;
+      sekolah_nama: string | null;
+    }>(`
+      SELECT r.id,
+             r.jenis_kegiatan,
+             r.sekolah_npsn,
+             r.submitted_at,
+             u.full_name  AS user_full_name,
+             s.nama       AS sekolah_nama
+      FROM kkri_reports r
+      LEFT JOIN kkri_users u ON u.id = r.user_id
+      LEFT JOIN fact_satpen_dikmen s ON s.npsn = r.sekolah_npsn
+      WHERE r.status = 'submitted'
+        AND r.submitted_at >= date('now', '-14 days')
+      ORDER BY r.submitted_at DESC
+      LIMIT 30
+    `),
 
-export async function POST(req: NextRequest) {
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Body harus berupa JSON" }, { status: 400 });
+    // 3. Pembina (mobile app) accounts awaiting approval
+    qAll<{ id: string; full_name: string; created_at: string }>(`
+      SELECT id, full_name, created_at
+      FROM kkri_users
+      WHERE is_active = 0
+        AND approved_at IS NULL
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 30
+    `),
+  ]);
+
+  const items: NotifItem[] = [];
+
+  // — Web MC users pending —
+  if (webUsersResult.status === "fulfilled") {
+    for (const u of webUsersResult.value) {
+      items.push({
+        id: `user_pending_${u.id}`,
+        type: "user_pending",
+        title: "Akun baru menunggu approval",
+        message: `${u.full_name} mendaftar dan menunggu persetujuan admin.`,
+        href: "/admin/users",
+        created_at: u.created_at,
+      });
+    }
   }
 
-  if (!isNonEmptyString(body?.title) || !isNonEmptyString(body?.body)) {
-    return NextResponse.json({ error: "Field 'title' dan 'body' wajib diisi" }, { status: 400 });
+  // — Unreviewed field reports —
+  if (reportsResult.status === "fulfilled") {
+    for (const r of reportsResult.value) {
+      const who = r.user_full_name ?? "Pembina";
+      const where = r.sekolah_nama ?? (r.sekolah_npsn ? `NPSN ${r.sekolah_npsn}` : "sekolah");
+      const jenis = r.jenis_kegiatan ? ` · ${r.jenis_kegiatan}` : "";
+      items.push({
+        id: `report_${r.id}`,
+        type: "report_new",
+        title: "Laporan baru masuk",
+        message: `${who}${jenis} di ${where}.`,
+        href: "/admin/reports",
+        created_at: r.submitted_at ?? new Date().toISOString(),
+      });
+    }
   }
 
-  const category: NotificationCategory = CATEGORIES.includes(body?.category) ? body.category : "system";
-  const severity: NotificationSeverity = SEVERITIES.includes(body?.severity) ? body.severity : "info";
+  // — Pembina pending approval —
+  if (pembinasResult.status === "fulfilled") {
+    for (const p of pembinasResult.value) {
+      items.push({
+        id: `pembina_pending_${p.id}`,
+        type: "pembina_pending",
+        title: "Pembina baru menunggu approval",
+        message: `${p.full_name} mendaftar via aplikasi mobile.`,
+        href: "/admin/pembina",
+        created_at: p.created_at,
+      });
+    }
+  }
 
-  const item: NotificationItem = {
-    id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: body.title.trim(),
-    body: body.body.trim(),
-    category,
-    severity,
-    createdAt: new Date().toISOString(),
-    readAt: null,
-  };
+  // Newest first
+  items.sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-  store.unshift(item);
-  // Cap the placeholder store so manual testing can't grow it unbounded.
-  if (store.length > 50) store.length = 50;
-
-  return NextResponse.json({ notification: item }, { status: 201 });
-}
-
-// Convenience for manual testing — clears the placeholder store
-// (e.g. `curl -X DELETE http://localhost:3000/api/notifications`).
-export async function DELETE() {
-  store.length = 0;
-  return NextResponse.json({ cleared: true });
+  return NextResponse.json({ ok: true, count: items.length, items });
 }

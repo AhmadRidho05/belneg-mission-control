@@ -9,6 +9,12 @@ import { SekolahDetailModal } from "@/components/sekolah-detail-modal";
 import { SkTimelineMini } from "@/components/charts";
 import { fmt } from "@/lib/utils";
 
+const INDONESIA_CENTER: [number, number] = [-2.5, 118.0];
+const INDONESIA_BOUNDS: [[number, number], [number, number]] = [
+  [-11.5, 94.0],
+  [6.5,  141.5],
+];
+
 type Bucket = "low" | "mid" | "high" | "crit";
 function bucketOf(n: number, maxN: number): Bucket {
   const t = n / maxN;
@@ -162,12 +168,23 @@ export default function AssignmentMap({ kodim }: { kodim: KodimWithPolitik[] }) 
       </header>
 
       <div className="flex-1 min-h-0 relative">
-        <MapContainer center={[-2.5, 118]} zoom={5} scrollWheelZoom className="absolute inset-0" preferCanvas>
+        <MapContainer
+          center={INDONESIA_CENTER}
+          zoom={5}
+          minZoom={4}
+          maxBounds={INDONESIA_BOUNDS}
+          maxBoundsViscosity={1.0}
+          worldCopyJump={false}
+          scrollWheelZoom
+          className="absolute inset-0"
+          preferCanvas
+        >
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; OpenStreetMap &copy; CARTO'
             subdomains="abcd"
             maxZoom={19}
+            noWrap={true}
           />
 
           <FlyTo target={flyTarget} />

@@ -10,7 +10,7 @@ import Link from "next/link";
 import {
   ShieldCheck, BarChart3, MapPin, GraduationCap, Layers,
   Clock3, Users, HeartHandshake, Mail, MapPinned, ChevronRight,
-  Globe, X, Search,
+  Globe, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -116,7 +116,7 @@ export default function LandingPage() {
           brown/black overlays on top keep the hero text readable. Autoplay
           only works muted — see `mute=1` in the embed URL below. */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute left-1/2 top-1/2 h-[120vh] w-[120vw] -translate-x-1/2 -translate-y-1/2">
+        <div className="absolute left-1/2 top-1/2 h-[120vh] w-[120vw] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
           <iframe
             className="absolute inset-0 h-full w-full object-cover"
             src="https://www.youtube.com/embed/cuQLbt5zPug?autoplay=1&mute=1&controls=0&loop=1&playlist=cuQLbt5zPug&modestbranding=1&rel=0&showinfo=0&playsinline=1"
@@ -139,12 +139,12 @@ export default function LandingPage() {
       <header className="relative z-30 border-b border-[#a47622]/15 bg-white/50 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 sm:px-8 py-4">
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#a47622]/20 bg-white/70 shadow-sm">
+            <span className="inline-flex h-9 w-9 items-center justify-center">
               <Image src="/logo.png" alt="BELNEG Logo" width={28} height={28} className="h-7 w-7 object-contain" priority />
             </span>
             <div className="leading-tight">
-              <div className={cn("font-display text-[12px] font-bold uppercase tracking-[0.18em]", INK)}>BELNEG</div>
-              <div className={cn("text-[9px] uppercase tracking-[0.22em]", GOLD, "opacity-80")}>Mission Control</div>
+              <div className="font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white">BELNEG</div>
+              <div className="text-[9px] uppercase tracking-[0.22em] text-[#e3b768]">Mission Control</div>
             </div>
           </Link>
 
@@ -154,7 +154,7 @@ export default function LandingPage() {
                 key={item.key}
                 type="button"
                 onClick={() => setOpenModal(item.key)}
-                className={cn("rounded-md px-3 py-2 text-[12px] font-medium transition hover:bg-[#a47622]/10", INK_MUTED, "hover:text-[#2a1300]")}
+                className={cn("rounded-md px-3 py-2 text-[12px] font-medium transition hover:bg-[#a47622]/10 text-[#a47622] hover:text-[#7a5719]")}
               >
                 {item.label}
               </button>
@@ -209,7 +209,7 @@ export default function LandingPage() {
               key={item.key}
               type="button"
               onClick={() => setOpenModal(item.key)}
-              className={cn("rounded-md px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[#a47622]/10", INK_MUTED, "hover:text-[#2a1300]")}
+              className={cn("rounded-md px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[#a47622]/10 text-[#a47622] hover:text-[#7a5719]")}
             >
               {item.label}
             </button>
@@ -235,24 +235,7 @@ export default function LandingPage() {
               sebaran satuan pendidikan, dan struktur teritorial TNI AD dalam satu pusat komando digital.
             </p>
 
-            {/* Big search bar — visual-only for now (mirrors the reference look),
-                same spirit as the language switcher: UI first, wiring later. */}
-            <div className="mt-7 flex max-w-md items-center gap-2 rounded-full border border-white/20 bg-white/10 p-1.5 pl-4 backdrop-blur-md">
-              <Search size={16} className="shrink-0 text-white/55" />
-              <input
-                type="text"
-                placeholder="Cari laporan, sekolah, atau wilayah KKRI…"
-                className="w-full bg-transparent text-[13px] text-white placeholder:text-white/50 focus:outline-none"
-              />
-              <button
-                type="button"
-                className="shrink-0 rounded-full bg-[#a47622] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-white transition hover:bg-[#8a6420]"
-              >
-                Cari
-              </button>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 href="/auth/login"
                 className="inline-flex items-center gap-2 rounded-md bg-[#a47622] px-6 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-white shadow-md transition hover:bg-[#8a6420]"

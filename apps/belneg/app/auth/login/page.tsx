@@ -5,21 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LogIn } from "lucide-react";
-import { simulateLogin, dashboardPathFor } from "@/lib/auth-sim";
 
-const REASON_MESSAGE: Record<"pending" | "rejected" | "not_found" | "nrp_mismatch" | "wrong_password", string> = {
-  nrp_mismatch: "NRP tidak sesuai dengan akun terdaftar.",
-  wrong_password: "Password salah.",
-  pending: "Akun Anda masih menunggu approval admin.",
-  rejected: "Akun Anda ditolak atau dinonaktifkan.",
-  not_found: "Akun tidak ditemukan. Silakan daftar terlebih dahulu.",
-};
-
-// TEMPORARY AUTH SIMULATION — see lib/auth-sim.ts. No real database/session:
-// identifier (email/WhatsApp) + NRP + password must all match a hardcoded
-// admin or an approved self-registered account (see Manage User) — the helper
-// returns a reason ("nrp_mismatch"/"wrong_password"/"pending"/"rejected"/
-// "not_found") otherwise so we can explain exactly why the login was refused.
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,71 +13,93 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [nrp, setNrp] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !nrp.trim() || !password) {
-      setError("Lengkapi Email/No WhatsApp, NRP, dan Password terlebih dahulu.");
+    if (!email.trim() || !nrp.trim()) {
+      setError("Lengkapi Email/No WhatsApp dan NRP terlebih dahulu.");
       return;
     }
-    const result = simulateLogin({ identifier: email, nrp, password });
-    if (!result.ok) {
-      setError(REASON_MESSAGE[result.reason]);
-      return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/web/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_or_phone: email, nrp }),
+      });
+      const data = await res.json() as { ok?: boolean; role?: string; error?: string; message?: string };
+      if (!res.ok) {
+        if (data.error === "pending") setError("Akun Anda masih menunggu approval admin.");
+        else if (data.error === "rejected") setError("Akun Anda ditolak atau dinonaktifkan.");
+        else if (data.error === "inactive") setError("Akun Anda tidak aktif. Hubungi admin.");
+        else setError(data.error ?? "Login gagal.");
+        return;
+      }
+      router.push(`/dashboard?role=${data.role}`);
+    } catch {
+      setError("Terjadi kesalahan koneksi. Coba lagi.");
+    } finally {
+      setLoading(false);
     }
-    router.push(dashboardPathFor(result.account.role));
   };
 
   return (
     <AuthShell>
       <h1 className="font-display text-2xl font-bold text-ink">Login</h1>
       <p className="mt-1 text-[12px] text-ink-muted">
-        Masuk ke BELNEG Mission Control. <em className="not-italic text-ink-subtle">(Simulasi sementara — belum terhubung ke database.)</em>
+        Masuk ke BELNEG Mission Control menggunakan Email/No WhatsApp dan NRP Anda.
       </p>
 
       {notice === "registered_pending" && (
         <div className="mt-4 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5 text-[12px] leading-relaxed text-warn">
-          Pendaftaran tersimpan. Akun Anda berstatus <strong>pending</strong> dan baru bisa login setelah disetujui admin.
+          Pendaftaran berhasil. Akun Anda berstatus <strong>pending</strong> dan baru bisa login setelah disetujui admin.
         </div>
       )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <Field label="Email / No WhatsApp">
           <input
-            required value={email} onChange={e => setEmail(e.target.value)}
+            required
+            value={email}
+            onChange={e => setEmail(e.target.value)}
             placeholder="nama@kkri.id atau 0812xxxxxxxx"
             className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         </Field>
         <Field label="NRP">
           <input
-            required value={nrp} onChange={e => setNrp(e.target.value)}
+            required
+            value={nrp}
+            onChange={e => setNrp(e.target.value)}
             placeholder="Nomor Registrasi Pokok"
-            className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••"
             className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         </Field>
 
         {error && <div className="text-[12px] text-crit">{error}</div>}
 
-        <button type="submit" className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition">
-          <LogIn size={14}/> Masuk
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition disabled:opacity-60"
+        >
+          <LogIn size={14} /> {loading ? "Memproses…" : "Masuk"}
         </button>
       </form>
 
       <p className="mt-5 text-center text-[12px] text-ink-muted">
-        Belum punya akun? <Link href="/auth/register" className="text-accent-glow hover:underline">Daftar</Link>
+        Belum punya akun?{" "}
+        <Link href="/auth/register" className="text-accent-glow hover:underline">
+          Daftar
+        </Link>
       </p>
       <p className="mt-2 text-center text-[12px]">
-        <Link href="/" className="text-ink-subtle hover:text-ink">← Kembali ke beranda</Link>
+        <Link href="/" className="text-ink-subtle hover:text-ink">
+          ← Kembali ke beranda
+        </Link>
       </p>
     </AuthShell>
   );
