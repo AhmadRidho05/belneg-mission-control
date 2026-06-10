@@ -24,6 +24,11 @@ export const metadata: Metadata = {
   description:
     "Bela Negara Mission Control · Cross-domain intelligence dashboard untuk Pendidikan Menengah & Komando TNI AD.",
   applicationName: "BELNEG",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
   appleWebApp: {
     capable: true,
     title: "BELNEG",

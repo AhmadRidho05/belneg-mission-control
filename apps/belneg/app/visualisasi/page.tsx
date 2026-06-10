@@ -1,11 +1,9 @@
 import {
-  kodamSummary, kodimSummary, sankeyKodamHierarchy, sankeyAllKodamKodimKab,
-  provinceBentukTree, statusBreakdown,
-  akreditasiBreakdown, akreditasiByProvince, internetBreakdown, listrikBreakdown,
-  topYayasan, scatterLuasAkreditasi, trendPesertaDidik, bubbleKabupaten,
-  skTimelineAll, skTimelineByAkreditasi, skTimelineByStatus,
-  prabowoKabSummary, kodamPolitikSummary, skTimelineByPrabowo,
-  koramilStatsPerKodam, koramilLoadScatter, koramilBentukDistribution, koramilByKorem,
+  kkriTargetKpi, targetBentukDistribution, targetAkreditasiBreakdown, targetInternetBreakdown,
+  targetPosisiBreakdown, targetProvinceDistribution, targetKabKotaDistribution, targetKecamatanDistribution,
+  targetPulauDistribution, targetProvinceBentukTree, targetLevelDistribution,
+  targetKodamSummary, targetKoremSummary, targetKoramilSummary, kodimSummary,
+  targetSchoolDirectory,
 } from "@/lib/db";
 import { VisualisasiShell } from "./visualisasi-shell";
 
@@ -13,68 +11,46 @@ export const dynamic = "force-dynamic";
 
 export default async function VisualisasiPage() {
   const [
-    kodam, kodim, sankeyTop5, sankeyAll, bentukTree, status, akr, akrByProv,
-    internet, listrik, yayasan, scatter, trend, bubble,
-    skAll, skByAkrPendirian, skByAkrOperasional, skByStatusPendirian, skByStatusOperasional,
-    prabowoKab, kodamPolitik, skByPrabowo,
-    koramilKodam, koramilScatter, koramilBentuk, koramilKorem,
+    kpi, bentuk, akreditasi, internet, posisi,
+    provinsi, kabKota, kecamatan, pulau, provinceBentukTree, levelDist,
+    kodam, korem, koramil, kodim, schools,
   ] = await Promise.all([
-    kodamSummary(),
+    kkriTargetKpi(),
+    targetBentukDistribution(),
+    targetAkreditasiBreakdown(),
+    targetInternetBreakdown(),
+    targetPosisiBreakdown(),
+    targetProvinceDistribution(12),
+    targetKabKotaDistribution(15),
+    targetKecamatanDistribution(15),
+    targetPulauDistribution(),
+    targetProvinceBentukTree(),
+    targetLevelDistribution(),
+    targetKodamSummary(),
+    targetKoremSummary(),
+    targetKoramilSummary(15),
     kodimSummary(),
-    sankeyKodamHierarchy(5),
-    sankeyAllKodamKodimKab(5),
-    provinceBentukTree(),
-    statusBreakdown(),
-    akreditasiBreakdown(),
-    akreditasiByProvince(),
-    internetBreakdown(),
-    listrikBreakdown(),
-    topYayasan(15),
-    scatterLuasAkreditasi(4000),
-    trendPesertaDidik(),
-    bubbleKabupaten(),
-    skTimelineAll(),
-    skTimelineByAkreditasi("pendirian"),
-    skTimelineByAkreditasi("operasional"),
-    skTimelineByStatus("pendirian"),
-    skTimelineByStatus("operasional"),
-    prabowoKabSummary(),
-    kodamPolitikSummary(),
-    skTimelineByPrabowo(),
-    koramilStatsPerKodam(),
-    koramilLoadScatter(),
-    koramilBentukDistribution(),
-    koramilByKorem(15),
+    targetSchoolDirectory(),
   ]);
 
   return (
     <VisualisasiShell
-      sankeyTop5={sankeyTop5}
-      sankeyAll={sankeyAll}
-      bentukTree={bentukTree}
-      status={status}
-      akr={akr}
-      akrByProv={akrByProv}
+      kpi={kpi}
+      bentuk={bentuk}
+      akreditasi={akreditasi}
       internet={internet}
-      listrik={listrik}
-      yayasan={yayasan}
-      scatter={scatter}
-      trend={trend}
-      bubble={bubble}
+      posisi={posisi}
+      provinsi={provinsi}
+      kabKota={kabKota}
+      kecamatan={kecamatan}
+      pulau={pulau}
+      provinceBentukTree={provinceBentukTree}
+      levelDist={levelDist}
       kodam={kodam}
+      korem={korem}
+      koramil={koramil}
       kodim={kodim}
-      skAll={skAll}
-      skByAkrPendirian={skByAkrPendirian}
-      skByAkrOperasional={skByAkrOperasional}
-      skByStatusPendirian={skByStatusPendirian}
-      skByStatusOperasional={skByStatusOperasional}
-      prabowoKab={prabowoKab}
-      kodamPolitik={kodamPolitik}
-      skByPrabowo={skByPrabowo}
-      koramilKodam={koramilKodam}
-      koramilScatter={koramilScatter}
-      koramilBentuk={koramilBentuk}
-      koramilKorem={koramilKorem}
+      schools={schools}
     />
   );
 }

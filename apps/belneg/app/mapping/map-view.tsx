@@ -1,14 +1,13 @@
 "use client";
-import { MapContainer, TileLayer, Marker, Popup, LayerGroup } from "react-leaflet";
-import L from "leaflet";
+import { MapContainer, TileLayer, CircleMarker, Popup, LayerGroup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { useMemo, useState } from "react";
-import { Filter, Eye, EyeOff, Crosshair, School, Shield, Compass, ChevronUp, ChevronDown } from "lucide-react";
-import type { MapSchoolPoint, MapMilitaryPoint } from "@/lib/db";
+import { Filter, Eye, EyeOff, Shield, Crosshair, Compass, Target as TargetIcon, ChevronDown } from "lucide-react";
+import type { TargetKodamAgg } from "@/lib/db";
 import { fmt } from "@/lib/utils";
-import { ClusteredSchools } from "./cluster-layer";
+import { ClusteredSchools, type MapTargetSchoolPoint } from "./cluster-layer";
 
 // School colors per bentuk
 const SCHOOL_COLOR: Record<string, string> = {
@@ -17,30 +16,21 @@ const SCHOOL_COLOR: Record<string, string> = {
   MA: "#a78bfa",
   MAK: "#ec4899",
 };
-const DEFAULT_SCHOOL_COLOR = "#94a3b8";
-
-// Military marker icons (SVG-based DivIcon).
-// KODIM size scales with koramilCount (more koramils under a kodim = larger marker).
-function militaryIcon(tipe: "KODAM" | "KOREM" | "KODIM", koramilCount = 0): L.DivIcon {
-  const baseSize = tipe === "KODAM" ? 28 : tipe === "KOREM" ? 22 : 16;
-  // Koramil density bump for KODIM: +0–10px on top of base 16
-  const sizeBump = tipe === "KODIM" ? Math.min(10, Math.round((koramilCount || 0) / 5)) : 0;
-  const size = baseSize + sizeBump;
-  const color = tipe === "KODAM" ? "#ef4444" : tipe === "KOREM" ? "#f59e0b" : "#c9b585";
-  const ring = tipe === "KODAM" ? 3 : 2;
-  const badge = tipe === "KODIM" && koramilCount > 0
-    ? `<div style="position:absolute;top:-6px;right:-8px;min-width:16px;height:14px;padding:0 4px;border-radius:7px;background:#0a0f1c;border:1px solid ${color};color:${color};font-size:8.5px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:ui-sans-serif">${koramilCount}</div>`
-    : "";
-  return L.divIcon({
-    className: "military-marker",
-    html: `<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring}px solid #0a0f1c;box-shadow:0 0 0 1px ${color},0 0 12px ${color}aa;display:flex;align-items:center;justify-content:center;font-size:${Math.round(baseSize * 0.45)}px;color:#0a0f1c;font-weight:900;font-family:ui-sans-serif">${tipe[0]}${badge}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
 
 const BENTUK_OPTIONS = ["SMA", "SMK", "MA", "MAK"] as const;
-const MIL_OPTIONS = ["KODAM", "KOREM", "KODIM"] as const;
+const LEVEL_OPTIONS = ["KOREM", "KODIM", "KORAMIL"] as const;
+const LEVEL_COLOR: Record<string, string> = {
+  KOREM: "#f59e0b",
+  KODIM: "#3b82f6",
+  KORAMIL: "#10b981",
+};
+const LEVEL_ICON: Record<string, any> = {
+  KOREM: Crosshair,
+  KODIM: Compass,
+  KORAMIL: TargetIcon,
+};
+const AKR_OPTIONS = ["ALL", "A", "B", "C", "TT", "BT"] as const;
+const KODAM_COLOR = "#ef4444";
 
 const INDONESIA_CENTER: [number, number] = [-2.5, 118.0];
 const INDONESIA_BOUNDS: [[number, number], [number, number]] = [
@@ -48,45 +38,33 @@ const INDONESIA_BOUNDS: [[number, number], [number, number]] = [
   [6.5,  141.5],   // northeast
 ];
 
-export default function MapView({ schools, military, koramilByKodim = {} }: { schools: MapSchoolPoint[]; military: MapMilitaryPoint[]; koramilByKodim?: Record<string, number> }) {
-  const [layers, setLayers] = useState({
-    SMA: true, SMK: true, MA: true, MAK: true,
-    KODAM: true, KOREM: true, KODIM: true,
-  });
-  const [status, setStatus] = useState<"ALL" | "NEGERI" | "SWASTA">("ALL");
-  const [akr, setAkr] = useState<"ALL" | "A" | "B" | "C" | "BT">("ALL");
+export default function MapView({ schools, kodamAgg }: { schools: MapTargetSchoolPoint[]; kodamAgg: TargetKodamAgg[] }) {
+  const [bentukLayers, setBentukLayers] = useState<Record<string, boolean>>({ SMA: true, SMK: true, MA: true, MAK: true });
+  const [levelLayers, setLevelLayers] = useState<Record<string, boolean>>({ KOREM: true, KODIM: true, KORAMIL: true });
+  const [akr, setAkr] = useState<(typeof AKR_OPTIONS)[number]>("ALL");
+  const [showKodam, setShowKodam] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false); // collapsed-by-default on mobile
-
-  // Province filter (computed lazily — extract unique province names from school NPSN locations)
-  // Actually we don't have province on the school point payload — keep it simple and add later.
 
   const filteredSchools = useMemo(() => {
     return schools.filter(s => {
-      // Map MA-family
-      const bentukKey = s.bentuk === "MA" ? "MA" :
-                        s.bentuk === "MAK" ? "MAK" :
-                        s.bentuk === "SMA" ? "SMA" :
-                        s.bentuk === "SMK" ? "SMK" :
-                        null;
-      if (!bentukKey || !(layers as any)[bentukKey]) return false;
-      if (status !== "ALL" && s.status !== status) return false;
-      if (akr !== "ALL") {
-        if (akr === "BT" && s.akr !== "BT") return false;
-        if (akr !== "BT" && s.akr !== akr) return false;
-      }
+      if (!bentukLayers[s.bentuk]) return false;
+      if (!levelLayers[s.level]) return false;
+      if (akr !== "ALL" && s.akreditasi !== akr) return false;
       return true;
     });
-  }, [schools, layers, status, akr]);
-
-  const filteredMil = useMemo(() => military.filter(m => (layers as any)[m.tipe]), [military, layers]);
+  }, [schools, bentukLayers, levelLayers, akr]);
 
   // Aggregate counts per visible bentuk
-  const counts = useMemo(() => {
+  const bentukCounts = useMemo(() => {
     const c: Record<string, number> = { SMA: 0, SMK: 0, MA: 0, MAK: 0 };
-    filteredSchools.forEach(s => {
-      const k = s.bentuk === "MA" ? "MA" : s.bentuk === "MAK" ? "MAK" : s.bentuk === "SMA" ? "SMA" : s.bentuk === "SMK" ? "SMK" : null;
-      if (k) c[k]++;
-    });
+    filteredSchools.forEach(s => { if (c[s.bentuk] !== undefined) c[s.bentuk]++; });
+    return c;
+  }, [filteredSchools]);
+
+  // Aggregate counts per visible level
+  const levelCounts = useMemo(() => {
+    const c: Record<string, number> = { KOREM: 0, KODIM: 0, KORAMIL: 0 };
+    filteredSchools.forEach(s => { c[s.level]++; });
     return c;
   }, [filteredSchools]);
 
@@ -114,31 +92,30 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
         {/* School layer (clustered via leaflet.markercluster directly) */}
         <ClusteredSchools points={filteredSchools} />
 
-        {/* Military layer (NOT clustered — they're scarce + iconic).
-            KODIM markers carry a koramil-count badge + density-scaled size. */}
-        <LayerGroup>
-          {filteredMil.map(m => {
-            const koramilN = m.tipe === "KODIM" ? (koramilByKodim[m.id] || 0) : 0;
-            return (
-              <Marker key={m.id} position={[m.lat, m.lng]} icon={militaryIcon(m.tipe, koramilN)}>
+        {/* KODAM aggregate centroids — agregasi target per KODAM (tidak ada koordinat markas di data target) */}
+        {showKodam && (
+          <LayerGroup>
+            {kodamAgg.map(k => (
+              <CircleMarker
+                key={k.kodam}
+                center={[k.lat, k.lng]}
+                radius={6 + Math.sqrt(k.n_sekolah_target) * 1.4}
+                pathOptions={{ color: KODAM_COLOR, fillColor: KODAM_COLOR, fillOpacity: 0.3, weight: 1.5 }}
+              >
                 <Popup>
                   <div className="text-[12px]">
-                    <div className="text-[10px] uppercase tracking-widest text-accent-glow mb-1">{m.tipe}</div>
-                    <div className="font-semibold text-ink mb-1">{m.name}</div>
-                    {m.address && <div className="text-ink-muted text-[11px]">{m.address}</div>}
-                    {m.tipe === "KODIM" && koramilN > 0 && (
-                      <div className="mt-2 pt-2 border-t border-white/10 text-[11px]">
-                        <span className="text-amber-300 font-semibold">{koramilN}</span>
-                        <span className="text-ink-muted"> koramil di bawahnya · </span>
-                        <a href={`/assignment/koramil-stress`} className="text-accent-glow underline">stress index</a>
-                      </div>
-                    )}
+                    <div className="text-[10px] uppercase tracking-widest text-accent-glow mb-1">KODAM</div>
+                    <div className="font-semibold text-ink mb-1">{k.kodam}</div>
+                    <div className="text-ink-muted text-[11px]">
+                      {fmt(k.n_sekolah_target)} sekolah target · {fmt(k.n_koramil_target)} koramil
+                    </div>
+                    <div className="text-ink-subtle text-[10px] mt-1">Posisi: centroid koordinat koramil target</div>
                   </div>
                 </Popup>
-              </Marker>
-            );
-          })}
-        </LayerGroup>
+              </CircleMarker>
+            ))}
+          </LayerGroup>
+        )}
       </MapContainer>
 
       {/* Mobile: floating filter toggle button (bottom-right) */}
@@ -180,58 +157,37 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
             </button>
           </div>
 
-          {/* SCHOOLS GROUP */}
+          {/* BENTUK GROUP */}
           <div className="mb-3">
-            <div className="stat-label mb-1.5 flex items-center gap-1.5"><School size={11}/> Satuan Pendidikan</div>
+            <div className="stat-label mb-1.5">Bentuk Sekolah</div>
             <div className="grid grid-cols-2 gap-1.5">
               {BENTUK_OPTIONS.map(k => (
                 <LayerToggle
                   key={k}
                   label={k}
-                  count={counts[k]}
-                  active={(layers as any)[k]}
+                  count={bentukCounts[k]}
+                  active={bentukLayers[k]}
                   color={SCHOOL_COLOR[k]}
-                  onChange={() => setLayers(l => ({ ...l, [k]: !(l as any)[k] }))}
+                  onChange={() => setBentukLayers(l => ({ ...l, [k]: !l[k] }))}
                 />
               ))}
             </div>
           </div>
 
-          {/* MILITARY GROUP */}
+          {/* LEVEL GROUP */}
           <div className="mb-3">
-            <div className="stat-label mb-1.5 flex items-center gap-1.5"><Shield size={11}/> Komando Teritorial</div>
+            <div className="stat-label mb-1.5 flex items-center gap-1.5"><Shield size={11}/> Level Komando</div>
             <div className="space-y-1.5">
-              {MIL_OPTIONS.map(k => {
-                const milCount = filteredMil.filter(m => m.tipe === k).length;
-                const color = k === "KODAM" ? "#ef4444" : k === "KOREM" ? "#f59e0b" : "#c9b585";
-                const Icon = k === "KODAM" ? Shield : k === "KOREM" ? Crosshair : Compass;
-                return (
-                  <LayerToggle
-                    key={k}
-                    label={k}
-                    count={milCount}
-                    active={(layers as any)[k]}
-                    color={color}
-                    icon={Icon}
-                    onChange={() => setLayers(l => ({ ...l, [k]: !(l as any)[k] }))}
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {/* STATUS FILTER */}
-          <div className="mb-3">
-            <div className="stat-label mb-1.5">Status</div>
-            <div className="flex gap-1">
-              {(["ALL", "NEGERI", "SWASTA"] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setStatus(s)}
-                  className={`flex-1 rounded-sm px-2 py-1 text-[10px] uppercase tracking-widest transition ${status === s ? "bg-accent text-bg font-semibold" : "bg-white/5 text-ink-muted hover:bg-white/10"}`}
-                >
-                  {s}
-                </button>
+              {LEVEL_OPTIONS.map(k => (
+                <LayerToggle
+                  key={k}
+                  label={k}
+                  count={levelCounts[k]}
+                  active={levelLayers[k]}
+                  color={LEVEL_COLOR[k]}
+                  icon={LEVEL_ICON[k]}
+                  onChange={() => setLevelLayers(l => ({ ...l, [k]: !l[k] }))}
+                />
               ))}
             </div>
           </div>
@@ -240,7 +196,7 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
           <div className="mb-3">
             <div className="stat-label mb-1.5">Akreditasi</div>
             <div className="flex gap-1">
-              {(["ALL", "A", "B", "C", "BT"] as const).map(a => (
+              {AKR_OPTIONS.map(a => (
                 <button
                   key={a}
                   onClick={() => setAkr(a)}
@@ -250,6 +206,19 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* KODAM CENTROID TOGGLE */}
+          <div className="mb-3">
+            <div className="stat-label mb-1.5 flex items-center gap-1.5"><Shield size={11}/> Agregasi Wilayah</div>
+            <LayerToggle
+              label="Centroid KODAM"
+              count={kodamAgg.length}
+              active={showKodam}
+              color={KODAM_COLOR}
+              icon={Shield}
+              onChange={() => setShowKodam(v => !v)}
+            />
           </div>
 
           {/* LEGEND */}
@@ -262,22 +231,16 @@ export default function MapView({ schools, military, koramilByKodim = {} }: { sc
                   {k}
                 </li>
               ))}
-              {MIL_OPTIONS.map(k => {
-                const color = k === "KODAM" ? "#ef4444" : k === "KOREM" ? "#f59e0b" : "#c9b585";
-                return (
-                  <li key={k} className="flex items-center gap-2">
-                    <span className="inline-flex h-3 w-3 items-center justify-center rounded-full text-[8px] font-black text-bg" style={{ background: color, border: "1.5px solid #0a0f1c", boxShadow: `0 0 0 1px ${color}` }}>
-                      {k[0]}
-                    </span>
-                    {k}
-                  </li>
-                );
-              })}
+              <li className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full border" style={{ borderColor: KODAM_COLOR, background: `${KODAM_COLOR}4d` }} />
+                Centroid KODAM (ukuran = jumlah sekolah target)
+              </li>
             </ul>
           </div>
 
           <div className="mt-3 border-t border-white/5 pt-2 text-[10px] text-ink-subtle">
-            Showing <strong className="text-ink-muted">{fmt(filteredSchools.length)}</strong> sekolah · <strong className="text-ink-muted">{fmt(filteredMil.length)}</strong> pos militer
+            Showing <strong className="text-ink-muted">{fmt(filteredSchools.length)}</strong> sekolah target
+            {showKodam && <> · <strong className="text-ink-muted">{fmt(kodamAgg.length)}</strong> centroid KODAM</>}
           </div>
         </div>
       </div>

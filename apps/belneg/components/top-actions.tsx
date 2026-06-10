@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Globe, Sun, Moon, Bell, LogOut, UserPlus, FileText, Shield } from "lucide-react";
+import { Globe, Sun, Moon, Bell, LogOut, UserPlus, FileText, Shield, FilePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { simulateLogout } from "@/lib/auth-sim";
 import type { NotifItem, NotifType } from "@/app/api/notifications/route";
@@ -13,20 +13,24 @@ type NotifState =
   | { status: "ready"; count: number; items: NotifItem[] };
 
 function relativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.round(diffMs / 60000);
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return "Waktu tidak tersedia";
+  const diffMs = Date.now() - ms;
+  if (diffMs < 0) return "Baru saja"; // clock skew guard
+  const minutes = Math.floor(diffMs / 60000);
   if (minutes < 1) return "Baru saja";
   if (minutes < 60) return `${minutes} menit lalu`;
-  const hours = Math.round(minutes / 60);
+  const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} jam lalu`;
-  const days = Math.round(hours / 24);
+  const days = Math.floor(hours / 24);
   return `${days} hari lalu`;
 }
 
 function typeIcon(type: NotifType) {
-  if (type === "user_pending") return <UserPlus size={11} className="text-warn shrink-0 mt-px" />;
-  if (type === "report_new")   return <FileText  size={11} className="text-accent-glow shrink-0 mt-px" />;
-  return                              <Shield    size={11} className="text-ok shrink-0 mt-px" />;
+  if (type === "user_pending")          return <UserPlus size={11} className="text-warn shrink-0 mt-px" />;
+  if (type === "report_new")            return <FileText  size={11} className="text-accent-glow shrink-0 mt-px" />;
+  if (type === "profile_change_pending") return <FilePen  size={11} className="text-accent-glow shrink-0 mt-px" />;
+  return                                        <Shield   size={11} className="text-ok shrink-0 mt-px" />;
 }
 
 const ICON_BTN =

@@ -1,7 +1,7 @@
 // Server-side aggregation for the AdminSummary dashboard at /admin/pembina.
 // Returns 13+ visualisation-ready datasets in one Promise.all.
 import "server-only";
-import { qAll, qGet } from "../../api/v1/_lib";
+import { qAll, qGet } from "../../api/web/_lib";
 
 export type AdminStats = {
   hero: {

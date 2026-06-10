@@ -1,4 +1,4 @@
-import { qAll, qGet } from "../../../api/v1/_lib";
+import { qAll, qGet } from "../../../api/web/_lib";
 import { notFound } from "next/navigation";
 import UserDetailClient from "./user-detail-client";
 

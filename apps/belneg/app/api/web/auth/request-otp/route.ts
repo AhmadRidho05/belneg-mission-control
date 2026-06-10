@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 type UserRow = {
   id: string;
   full_name: string;
-  nrp: string;
+  nrp: string | null;
   status: string;
   is_active: number;
 };
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const nrp = (body.nrp as string | undefined)?.trim() ?? "";
 
   if (!email_or_phone || !nrp) {
-    return bad("email_or_phone dan nrp wajib diisi.");
+    return bad("Nomor HP / Email dan NRP wajib diisi.");
   }
 
   const user = await qGet<UserRow>(
@@ -33,10 +33,10 @@ export async function POST(req: NextRequest) {
   );
 
   if (!user) {
-    return bad("Akun tidak ditemukan. Silakan daftar terlebih dahulu.", 404);
+    return bad("Nomor HP / Email tidak terdaftar. Hubungi admin untuk membuat akun.", 404);
   }
   if (user.nrp !== nrp) {
-    return bad("NRP tidak sesuai dengan akun terdaftar.", 401);
+    return bad("NRP tidak sesuai.", 401);
   }
   if (user.status === "pending") {
     return NextResponse.json(
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Invalidate all previous unused OTPs for this user/purpose so old codes can't be used
+  // Invalidate all previous unused OTPs for this user/purpose
   await qRun(
     `UPDATE web_otp_codes SET used_at = CURRENT_TIMESTAMP
      WHERE email_or_phone = ? AND purpose = 'login' AND used_at IS NULL`,
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
     [id, user.id, email_or_phone, code, expiresAt]
   );
 
-  // DEMO: no email/WA provider yet — print to server terminal only
-  console.log(`[DEMO OTP] email_or_phone: ${email_or_phone} | code: ${code}`);
+  // DEMO: no WA/email provider yet — print to server terminal only
+  console.log(`[DEMO OTP] identifier: ${email_or_phone} | code: ${code}`);
 
   return ok({ ok: true });
 }

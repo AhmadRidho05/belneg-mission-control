@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { LogIn, Send, KeyRound, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogIn, Send, RefreshCw, Phone, Eye, EyeOff } from "lucide-react";
 
 type Stage = "request" | "verify";
 
@@ -12,22 +12,19 @@ const RESEND_COOLDOWN = 60; // seconds
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const notice = searchParams.get("notice");
 
   const [stage, setStage] = useState<Stage>("request");
 
   // Stage 1 fields
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [nrp, setNrp] = useState("");
+  const [showNrp, setShowNrp] = useState(false);
 
   // Stage 2 field
   const [otp, setOtp] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Resend cooldown counter (seconds remaining)
   const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
@@ -37,8 +34,8 @@ export default function LoginPage() {
   }, [cooldown]);
 
   const requestOtp = async () => {
-    if (!email.trim() || !nrp.trim()) {
-      setError("Lengkapi Email/No WhatsApp dan NRP terlebih dahulu.");
+    if (!phone.trim() || !nrp.trim()) {
+      setError("Lengkapi Nomor HP dan NRP terlebih dahulu.");
       return;
     }
     setLoading(true);
@@ -47,7 +44,7 @@ export default function LoginPage() {
       const res = await fetch("/api/web/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email_or_phone: email.trim().toLowerCase(), nrp: nrp.trim() }),
+        body: JSON.stringify({ email_or_phone: phone.trim().toLowerCase(), nrp: nrp.trim() }),
       });
       const data = await res.json() as { ok?: boolean; error?: string; message?: string };
       if (!res.ok) {
@@ -78,7 +75,7 @@ export default function LoginPage() {
       const res = await fetch("/api/web/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email_or_phone: email.trim().toLowerCase(), otp_code: otp.trim() }),
+        body: JSON.stringify({ email_or_phone: phone.trim().toLowerCase(), otp_code: otp.trim() }),
       });
       const data = await res.json() as { ok?: boolean; role?: string; error?: string; message?: string };
       if (!res.ok) {
@@ -111,37 +108,49 @@ export default function LoginPage() {
       <h1 className="font-display text-2xl font-bold text-ink">Login</h1>
       <p className="mt-1 text-[12px] text-ink-muted">
         {stage === "request"
-          ? "Masuk ke BELNEG Mission Control menggunakan Email/No WhatsApp dan NRP Anda."
+          ? "Masuk ke BELNEG Mission Control menggunakan Nomor HP dan NRP Anda."
           : "Masukkan kode OTP yang sudah dikirim."}
       </p>
-
-      {notice === "registered_pending" && stage === "request" && (
-        <div className="mt-4 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5 text-[12px] leading-relaxed text-warn">
-          Pendaftaran berhasil. Akun Anda berstatus <strong>pending</strong> dan baru bisa login setelah disetujui admin.
-        </div>
-      )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         {stage === "request" ? (
           <>
-            <Field label="Email / No WhatsApp">
-              <input
-                required
-                autoFocus
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="nama@kkri.id atau 0812xxxxxxxx"
-                className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-              />
+            <Field label="Nomor HP / WhatsApp">
+              <div className="relative">
+                <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none" />
+                <input
+                  required
+                  autoFocus
+                  type="tel"
+                  inputMode="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="0812xxxxxxxx"
+                  className="w-full rounded-md border border-white/10 bg-bg/60 pl-8 pr-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+              </div>
             </Field>
+
             <Field label="NRP">
-              <input
-                required
-                value={nrp}
-                onChange={e => setNrp(e.target.value)}
-                placeholder="Nomor Registrasi Pokok"
-                className="w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
-              />
+              <div className="relative">
+                <input
+                  required
+                  type={showNrp ? "text" : "password"}
+                  value={nrp}
+                  onChange={e => setNrp(e.target.value)}
+                  placeholder="Masukkan NRP"
+                  autoComplete="off"
+                  className="w-full rounded-md border border-white/10 bg-bg/60 px-3 pr-9 py-2.5 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNrp(v => !v)}
+                  aria-label={showNrp ? "Sembunyikan NRP" : "Tampilkan NRP"}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-subtle hover:text-ink transition p-0.5"
+                >
+                  {showNrp ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </Field>
 
             {error && <div className="text-[12px] text-crit">{error}</div>}
@@ -190,7 +199,7 @@ export default function LoginPage() {
                 onClick={() => { setStage("request"); setError(null); setOtp(""); }}
                 className="text-[12px] text-ink-muted hover:text-ink transition"
               >
-                ← Ubah Email / NRP
+                ← Ubah Nomor HP / NRP
               </button>
               <button
                 type="button"
@@ -207,19 +216,11 @@ export default function LoginPage() {
       </form>
 
       {stage === "request" && (
-        <>
-          <p className="mt-5 text-center text-[12px] text-ink-muted">
-            Belum punya akun?{" "}
-            <Link href="/auth/register" className="text-accent-glow hover:underline">
-              Daftar
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-[12px]">
-            <Link href="/" className="text-ink-subtle hover:text-ink">
-              ← Kembali ke beranda
-            </Link>
-          </p>
-        </>
+        <p className="mt-5 text-center text-[12px]">
+          <Link href="/" className="text-ink-subtle hover:text-ink">
+            ← Kembali ke beranda
+          </Link>
+        </p>
       )}
     </AuthShell>
   );

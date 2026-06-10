@@ -13,6 +13,33 @@ const NAVY = "#0f172a";
 const PALETTE = ["#f59e0b", "#fbbf24", "#10b981", "#3b82f6", "#a78bfa", "#ec4899", "#ef4444", "#0ea5e9", "#84cc16", "#f97316", "#22d3ee", "#e879f9"];
 const TOOLTIP_STYLE = { background: "#0d1424", border: "1px solid rgba(255,255,255,0.08)", color: "#e8edf5", fontSize: 12, borderRadius: 6 };
 
+// Custom tooltip for Pie / Doughnut charts — shows name, count, and percentage.
+function PieTooltip({ active, payload, total }: { active?: boolean; payload?: any[]; total: number }) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  const value = item.value as number;
+  const pctVal = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
+  return (
+    <div style={{
+      background: "rgba(13, 20, 36, 0.97)",
+      border: "1px solid rgba(212, 160, 23, 0.45)",
+      borderRadius: 8,
+      padding: "10px 14px",
+      fontSize: 12,
+      color: "#e8edf5",
+      lineHeight: 1.7,
+      pointerEvents: "none",
+      zIndex: 9999,
+    }}>
+      <div style={{ fontWeight: 700, marginBottom: 3, color: item.color ?? "#f59e0b" }}>
+        {item.name}
+      </div>
+      <div>Jumlah: <strong>{fmt(value)}</strong></div>
+      <div>Persentase: <strong>{pctVal}%</strong></div>
+    </div>
+  );
+}
+
 // ────────────────────────── 1. DOUGHNUT ──────────────────────────
 export function DoughnutChart({ data, dataKey = "n", nameKey = "name", colors = PALETTE, total }: { data: any[]; dataKey?: string; nameKey?: string; colors?: string[]; total?: number }) {
   const sum = total ?? data.reduce((s, d) => s + d[dataKey], 0);
@@ -23,7 +50,7 @@ export function DoughnutChart({ data, dataKey = "n", nameKey = "name", colors = 
           <Pie data={data} dataKey={dataKey} nameKey={nameKey} cx="50%" cy="50%" innerRadius={62} outerRadius={100} paddingAngle={2}>
             {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} stroke={NAVY} strokeWidth={2} />)}
           </Pie>
-          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmt(v)} />
+          <Tooltip content={(props) => <PieTooltip {...props} total={sum} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#9aa6bd" }} iconSize={8} />
         </PieChart>
       </ResponsiveContainer>
@@ -37,6 +64,7 @@ export function DoughnutChart({ data, dataKey = "n", nameKey = "name", colors = 
 
 // ────────────────────────── 2. PIE ──────────────────────────
 export function PieDistChart({ data, dataKey = "n", nameKey = "name", colors = PALETTE }: { data: any[]; dataKey?: string; nameKey?: string; colors?: string[] }) {
+  const total = data.reduce((s, d) => s + (d[dataKey] as number), 0);
   return (
     <div className="h-[280px]">
       <ResponsiveContainer>
@@ -44,7 +72,7 @@ export function PieDistChart({ data, dataKey = "n", nameKey = "name", colors = P
           <Pie data={data} dataKey={dataKey} nameKey={nameKey} cx="50%" cy="50%" outerRadius={100} label={({ percent }) => percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""} labelLine={false}>
             {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} stroke={NAVY} strokeWidth={1.5} />)}
           </Pie>
-          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => fmt(v)} />
+          <Tooltip content={(props) => <PieTooltip {...props} total={total} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#9aa6bd" }} iconSize={8} />
         </PieChart>
       </ResponsiveContainer>

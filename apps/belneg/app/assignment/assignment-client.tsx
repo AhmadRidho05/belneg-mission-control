@@ -3,11 +3,6 @@ import dynamic from "next/dynamic";
 import type { KodimRow } from "@/lib/db";
 import { SubNav } from "./koramil-stress/koramil-stress-client";
 
-export type KodimWithPolitik = KodimRow & {
-  pct24_prabowo: number | null;
-  swing_pp: number | null;
-};
-
 const AssignmentMap = dynamic(() => import("./assignment-map"), {
   ssr: false,
   loading: () => (
@@ -17,7 +12,7 @@ const AssignmentMap = dynamic(() => import("./assignment-map"), {
   ),
 });
 
-export default function AssignmentClient({ kodim, isAdmin = false }: { kodim: KodimWithPolitik[]; isAdmin?: boolean }) {
+export default function AssignmentClient({ kodim, isAdmin = false }: { kodim: KodimRow[]; isAdmin?: boolean }) {
   return (
     <div className="flex flex-col h-full">
       {isAdmin && (

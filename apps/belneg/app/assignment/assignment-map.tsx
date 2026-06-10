@@ -3,8 +3,8 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Popup
 import "leaflet/dist/leaflet.css";
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Crosshair, Shield, Filter, ChevronDown, ChevronUp, ExternalLink, Flame, Search, Calendar, Vote, Check, FileDown } from "lucide-react";
-import type { KodimWithPolitik } from "./assignment-client";
+import { Crosshair, Shield, Filter, ChevronDown, ChevronUp, ExternalLink, Flame, Search, Calendar, Check, FileDown } from "lucide-react";
+import type { KodimRow } from "@/lib/db";
 import { SekolahDetailModal } from "@/components/sekolah-detail-modal";
 import { SkTimelineMini } from "@/components/charts";
 import { fmt } from "@/lib/utils";
@@ -36,22 +36,6 @@ function gradientColor(t: number): string {
   const hue = clamp < 0.5 ? 140 - clamp * 80 : 60 - (clamp - 0.5) * 120;
   return `hsl(${hue.toFixed(0)} 75% 55%)`;
 }
-// For politik mode: blue (Anies-strong) → grey (swing) → red (Prabowo-strong)
-function politikColor(pct: number | null): string {
-  if (pct == null) return "hsl(220 8% 45%)"; // grey for no data
-  // pct is 0-100 (% Prabowo). Bench: <40 anies, 40-60 swing, >60 prabowo
-  if (pct < 40) {
-    // blue, intensity = (40 - pct) / 40
-    const t = Math.min(1, (40 - pct) / 30);
-    return `hsl(217 80% ${(60 - t * 18).toFixed(0)}%)`;
-  }
-  if (pct >= 60) {
-    const t = Math.min(1, (pct - 60) / 30);
-    return `hsl(0 80% ${(58 - t * 15).toFixed(0)}%)`;
-  }
-  // swing
-  return "hsl(265 50% 55%)";
-}
 
 function FlyTo({ target }: { target: { lat: number; lng: number; zoom?: number } | null }) {
   const map = useMap();
@@ -63,10 +47,9 @@ function FlyTo({ target }: { target: { lat: number; lng: number; zoom?: number }
 
 const KODAM_OPTS = ["ALL"] as const;
 
-export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: KodimWithPolitik[]; isAdmin?: boolean }) {
+export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: KodimRow[]; isAdmin?: boolean }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<KodimWithPolitik | null>(null);
-  const [colorMode, setColorMode] = useState<"stress" | "politik">("stress");
+  const [selected, setSelected] = useState<KodimRow | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const [search, setSearch] = useState("");
@@ -192,7 +175,7 @@ export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: Kodim
           {visible.map(k => {
             const t = k.n_sekolah / maxN;
             const radius = Math.max(4, Math.sqrt(k.n_sekolah) * 1.4 + 2);
-            const color = colorMode === "stress" ? gradientColor(t) : politikColor(k.pct24_prabowo);
+            const color = gradientColor(t);
             const isSelected = selected?.kodim_id === k.kodim_id;
             return (
               <CircleMarker
@@ -214,11 +197,6 @@ export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: Kodim
                     <div className="font-semibold text-ink">{k.kodim_name}</div>
                     <div className="text-ink-muted">{k.kabupaten_kota}</div>
                     <div className="mt-0.5 text-accent-glow">{fmt(k.n_sekolah)} sekolah</div>
-                    {k.pct24_prabowo != null && (
-                      <div className="mt-0.5">
-                        <span style={{ color: politikColor(k.pct24_prabowo) }}>● Prabowo 2024: {k.pct24_prabowo.toFixed(1)}%</span>
-                      </div>
-                    )}
                   </div>
                 </LeafletTooltip>
               </CircleMarker>
@@ -270,29 +248,6 @@ export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: Kodim
 
             {panelOpen && (
               <div className="p-3 space-y-3">
-                {/* Color mode toggle */}
-                <div>
-                  <div className="stat-label mb-1">Warna Marker</div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {(["stress", "politik"] as const).map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setColorMode(m)}
-                        className={`rounded-sm px-2 py-1.5 text-[10px] uppercase tracking-widest transition ${colorMode === m ? "bg-accent text-bg font-semibold" : "bg-white/5 text-ink-muted hover:bg-white/10"}`}
-                      >
-                        {m === "stress" ? "Beban Sekolah" : "% Prabowo 2024"}
-                      </button>
-                    ))}
-                  </div>
-                  {colorMode === "politik" && (
-                    <div className="mt-1.5 flex justify-between text-[9px] uppercase tracking-widest text-ink-subtle">
-                      <span><span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: politikColor(10) }}/>Anies</span>
-                      <span><span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: politikColor(50) }}/>Swing</span>
-                      <span><span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: politikColor(85) }}/>Prabowo</span>
-                    </div>
-                  )}
-                </div>
-
                 {/* Search */}
                 <div className="relative">
                   <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-subtle" />
@@ -355,7 +310,7 @@ export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: Kodim
                   <div className="max-h-[280px] overflow-y-auto space-y-0.5">
                     {ranked.slice(0, 80).map((k, i) => {
                       const t = k.n_sekolah / maxN;
-                      const c = colorMode === "stress" ? gradientColor(t) : politikColor(k.pct24_prabowo);
+                      const c = gradientColor(t);
                       const isSel = selected?.kodim_id === k.kodim_id;
                       const isPicked = picked.has(k.kodim_id);
                       return (
@@ -432,26 +387,6 @@ export default function AssignmentMap({ kodim, isAdmin = false }: { kodim: Kodim
                     <div className="mt-0.5 text-ink-muted">via {selected.korem_name}</div>
                   )}
                 </div>
-
-                {selected.pct24_prabowo != null && (
-                  <div className="rounded-md border p-2.5 text-[11px]" style={{ borderColor: `${politikColor(selected.pct24_prabowo)}55`, background: `${politikColor(selected.pct24_prabowo)}10` }}>
-                    <div className="flex items-center gap-1.5"><Vote size={11} style={{ color: politikColor(selected.pct24_prabowo) }}/><span className="stat-label">Pilpres 2024 (kab)</span></div>
-                    <div className="mt-1 flex items-baseline justify-between">
-                      <span className="font-display text-lg font-bold tabular-nums" style={{ color: politikColor(selected.pct24_prabowo) }}>
-                        {selected.pct24_prabowo.toFixed(1)}%
-                      </span>
-                      <span className="text-ink-muted">% Prabowo</span>
-                    </div>
-                    {selected.swing_pp != null && (
-                      <div className="mt-0.5 text-[10px]">
-                        Swing 2019→2024:
-                        <span className={`ml-1 font-semibold ${selected.swing_pp > 0 ? "text-ok" : "text-crit"}`}>
-                          {selected.swing_pp > 0 ? "+" : ""}{selected.swing_pp.toFixed(1)} pp
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 <div>
                   <div className="stat-label mb-1.5 flex items-center justify-between">

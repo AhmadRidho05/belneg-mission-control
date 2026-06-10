@@ -3,10 +3,19 @@
 import { useState } from "react";
 import {
   CheckCircle2, XCircle, Clock, Search,
-  Users as UsersIcon, Shield, AlertTriangle,
+  Users as UsersIcon, Shield, AlertTriangle, UserPlus, X,
 } from "lucide-react";
 import { fmt } from "@/lib/utils";
 import type { WebUser } from "./page";
+
+const JABATAN_OPTIONS = [
+  "Pratu", "Praka", "Kopda", "Koptu", "Kopka",
+  "Serda", "Sertu", "Serka", "Serma", "Pelda", "Peltu",
+  "Letda", "Lettu", "Kapten", "Mayor", "Letkol", "Kolonel",
+  "Brigjen", "Mayjen", "Letjen", "Jenderal",
+] as const;
+
+const UNIT_JENIS_OPTIONS = ["KODAM", "KOREM", "KODIM", "KORAMIL"] as const;
 
 type UserBucket = "pending" | "approved" | "rejected";
 
@@ -15,6 +24,241 @@ function bucketOf(u: WebUser): UserBucket {
   if (s === "approved" || s === "rejected" || s === "pending") return s;
   return u.is_active ? "approved" : "pending";
 }
+
+// ─── Add User Modal ────────────────────────────────────────────────────────────
+
+const INPUT_CLS =
+  "w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2 text-[13px] text-ink placeholder:text-ink-subtle focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30";
+
+type AddUserForm = {
+  full_name: string;
+  email_or_phone: string;
+  nrp: string;
+  jabatan: string;
+  unit_type: string;
+  unit_name: string;
+  role: "admin" | "user";
+};
+
+function AddUserModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (u: WebUser) => void;
+}) {
+  const [form, setForm] = useState<AddUserForm>({
+    full_name: "",
+    email_or_phone: "",
+    nrp: "",
+    jabatan: JABATAN_OPTIONS[0],
+    unit_type: UNIT_JENIS_OPTIONS[0],
+    unit_name: "",
+    role: "user",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const set = <K extends keyof AddUserForm>(k: K, v: AddUserForm[K]) =>
+    setForm(f => ({ ...f, [k]: v }));
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name.trim() || !form.email_or_phone.trim() || !form.nrp.trim() || !form.unit_name.trim()) {
+      setError("Lengkapi semua field yang wajib.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/web/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: form.full_name.trim(),
+          email_or_phone: form.email_or_phone.trim(),
+          nrp: form.nrp.trim(),
+          jabatan: form.jabatan,
+          unit_type: form.unit_type,
+          unit_name: form.unit_name.trim(),
+          role: form.role,
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; user?: WebUser; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? `Gagal membuat user (HTTP ${res.status}).`);
+        return;
+      }
+      onCreated(data.user!);
+    } catch {
+      setError("Terjadi kesalahan koneksi. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative z-10 w-full max-w-lg rounded-xl border border-white/10 bg-bg-soft shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <UserPlus size={16} className="text-accent" />
+            <h2 className="font-display text-base font-bold text-ink">Tambah User Baru</h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Tutup"
+            className="rounded-md p-1.5 text-ink-muted hover:bg-white/5 hover:text-ink transition"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={onSubmit} className="space-y-4 p-5">
+          <p className="text-[12px] text-ink-muted">
+            User yang dibuat admin langsung berstatus{" "}
+            <span className="font-semibold text-ok">approved</span> dan bisa login segera.
+          </p>
+
+          <ModalField label="Nama Lengkap *">
+            <input
+              required
+              autoFocus
+              value={form.full_name}
+              onChange={e => set("full_name", e.target.value)}
+              placeholder="Nama lengkap"
+              className={INPUT_CLS}
+            />
+          </ModalField>
+
+          <ModalField label="Nomor HP / WhatsApp *">
+            <input
+              required
+              type="tel"
+              inputMode="tel"
+              value={form.email_or_phone}
+              onChange={e => set("email_or_phone", e.target.value)}
+              placeholder="0812xxxxxxxx"
+              className={INPUT_CLS}
+            />
+          </ModalField>
+
+          <ModalField label="NRP *">
+            <input
+              required
+              value={form.nrp}
+              onChange={e => set("nrp", e.target.value)}
+              placeholder="Nomor Registrasi Pokok"
+              className={INPUT_CLS}
+            />
+          </ModalField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <ModalField label="Pangkat *">
+              <select
+                required
+                value={form.jabatan}
+                onChange={e => set("jabatan", e.target.value)}
+                className={INPUT_CLS}
+              >
+                {JABATAN_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
+              </select>
+            </ModalField>
+            <ModalField label="Jenis Satuan">
+              <select
+                value={form.unit_type}
+                onChange={e => set("unit_type", e.target.value)}
+                className={INPUT_CLS}
+              >
+                {UNIT_JENIS_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </ModalField>
+          </div>
+
+          <ModalField label="Nama Unit Kerja *">
+            <input
+              required
+              value={form.unit_name}
+              onChange={e => set("unit_name", e.target.value)}
+              placeholder="cth. Kodim 0501/BS, Korem 052/Wijayakrama"
+              className={INPUT_CLS}
+            />
+          </ModalField>
+
+          <ModalField label="Role">
+            <div className="flex gap-3">
+              {(["user", "admin"] as const).map(r => (
+                <label key={r} className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="role"
+                    value={r}
+                    checked={form.role === r}
+                    onChange={() => set("role", r)}
+                    className="accent-accent"
+                  />
+                  <span className={`text-[12px] font-semibold uppercase tracking-wider ${
+                    r === "admin" ? "text-crit" : "text-ink-muted"
+                  }`}>
+                    {r}
+                    {r === "admin" && (
+                      <span className="ml-1 text-[10px] text-crit/70 normal-case font-normal">(full access)</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </ModalField>
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-3 py-2.5 text-[12px] text-crit">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 border-t border-white/5 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-[12px] text-ink-muted hover:bg-white/10 transition"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-[12px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition disabled:opacity-60"
+            >
+              <UserPlus size={13} />
+              {loading ? "Membuat…" : "Buat User"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="stat-label">{label}</span>
+      <div className="mt-1.5">{children}</div>
+    </label>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function UsersClient({
   users: initialUsers,
@@ -27,6 +271,7 @@ export default function UsersClient({
   const [filter, setFilter] = useState<"all" | UserBucket>("pending");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const filtered = users.filter(u => {
     if (filter !== "all" && bucketOf(u) !== filter) return false;
@@ -112,6 +357,12 @@ export default function UsersClient({
     }
   };
 
+  const handleUserCreated = (newUser: WebUser) => {
+    setUsers(prev => [newUser, ...prev]);
+    setShowAddModal(false);
+    setFilter("approved");
+  };
+
   const counts = {
     all: users.length,
     pending: users.filter(u => bucketOf(u) === "pending").length,
@@ -120,111 +371,136 @@ export default function UsersClient({
   };
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <header className="flex flex-col gap-2 border-b border-white/5 pb-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="chip text-accent-glow border-accent/40">● ADMIN</span>
-          <span className="chip">
-            {counts.pending} pending · {counts.approved} approved · {counts.rejected} rejected
-          </span>
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-ink">
-          Manage <span className="text-accent-glow">User</span>
-        </h1>
-        <p className="text-[13px] text-ink-muted">
-          Kelola akun web BELNEG Mission Control. User yang mendaftar muncul sebagai{" "}
-          <em>pending</em> — admin perlu approve sebelum user bisa login.
-        </p>
-      </header>
-
-      {/* Error banner */}
-      {error && (
-        <div className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-4 py-3 text-[13px] text-crit">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <span><strong>Gagal memuat data:</strong> {error}</span>
-        </div>
+    <>
+      {showAddModal && (
+        <AddUserModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={handleUserCreated}
+        />
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <SummaryCard icon={UsersIcon} label="Total User" value={counts.all} accent="ink" />
-        <SummaryCard icon={Clock} label="Pending" value={counts.pending} accent="warn" />
-        <SummaryCard icon={CheckCircle2} label="Approved" value={counts.approved} accent="ok" />
-        <SummaryCard icon={XCircle} label="Rejected" value={counts.rejected} accent="crit" />
-      </div>
-
-      {/* Filter + search */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1">
-          {(["all", "pending", "approved", "rejected"] as const).map(f => (
+      <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+        <header className="flex flex-col gap-2 border-b border-white/5 pb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="chip text-accent-glow border-accent/40">● ADMIN</span>
+            <span className="chip">
+              {counts.pending} pending · {counts.approved} approved · {counts.rejected} rejected
+            </span>
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-ink">
+                Manage <span className="text-accent-glow">User</span>
+              </h1>
+              <p className="mt-1 text-[13px] text-ink-muted">
+                Kelola akun web BELNEG Mission Control. User baru hanya bisa dibuat oleh admin.
+              </p>
+            </div>
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-md px-3 py-1.5 text-[11px] uppercase tracking-widest transition ${
-                filter === f
-                  ? "bg-accent text-bg font-semibold"
-                  : "bg-white/5 text-ink-muted hover:bg-white/10"
-              }`}
+              onClick={() => setShowAddModal(true)}
+              className="shrink-0 inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[12px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition"
             >
-              {f} ({counts[f]})
+              <UserPlus size={14} />
+              Tambah User
             </button>
-          ))}
-        </div>
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-subtle" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nama, email/WA, NRP, unit…"
-            className="w-full rounded-md border border-white/10 bg-bg/60 pl-7 pr-2 py-1.5 text-[12px] text-ink placeholder:text-ink-subtle"
-          />
-        </div>
-      </div>
+          </div>
+        </header>
 
-      {/* Table */}
-      {!error && users.length === 0 ? (
-        <div className="panel p-10 text-center">
-          <div className="text-[13px] font-medium text-ink">Belum ada data user.</div>
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-4 py-3 text-[13px] text-crit">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span><strong>Gagal memuat data:</strong> {error}</span>
+          </div>
+        )}
+
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryCard icon={UsersIcon} label="Total User" value={counts.all} accent="ink" />
+          <SummaryCard icon={Clock} label="Pending" value={counts.pending} accent="warn" />
+          <SummaryCard icon={CheckCircle2} label="Approved" value={counts.approved} accent="ok" />
+          <SummaryCard icon={XCircle} label="Rejected" value={counts.rejected} accent="crit" />
         </div>
-      ) : (
-        <div className="panel overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead className="bg-bg-soft/80 text-[10px] uppercase tracking-widest text-ink-subtle">
-                <tr>
-                  <th className="text-left px-3 py-2.5">Nama / Kontak</th>
-                  <th className="text-left px-3 py-2.5">Jabatan / Unit</th>
-                  <th className="text-left px-3 py-2.5">Role</th>
-                  <th className="text-left px-3 py-2.5">Status</th>
-                  <th className="text-left px-3 py-2.5">Terdaftar</th>
-                  <th className="text-left px-3 py-2.5">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-ink-subtle">
-                      Tidak ada user yang cocok dengan filter.
-                    </td>
-                  </tr>
-                )}
-                {filtered.map(u => (
-                  <UserRow
-                    key={u.id}
-                    user={u}
-                    onApprove={approve}
-                    onReject={reject}
-                    onDeactivate={deactivate}
-                    onDelete={removeUser}
-                    busy={busy === u.id}
-                  />
-                ))}
-              </tbody>
-            </table>
+
+        {/* Filter + search */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            {(["all", "pending", "approved", "rejected"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-md px-3 py-1.5 text-[11px] uppercase tracking-widest transition ${
+                  filter === f
+                    ? "bg-accent text-bg font-semibold"
+                    : "bg-white/5 text-ink-muted hover:bg-white/10"
+                }`}
+              >
+                {f} ({counts[f]})
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-subtle" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Cari nama, no HP, NRP, unit…"
+              className="w-full rounded-md border border-white/10 bg-bg/60 pl-7 pr-2 py-1.5 text-[12px] text-ink placeholder:text-ink-subtle"
+            />
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Table */}
+        {!error && users.length === 0 ? (
+          <div className="panel p-10 text-center">
+            <div className="text-[13px] font-medium text-ink-muted mb-3">Belum ada data user.</div>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-[12px] font-semibold uppercase tracking-wider text-bg shadow-glow hover:bg-accent-glow transition"
+            >
+              <UserPlus size={14} /> Tambah User Pertama
+            </button>
+          </div>
+        ) : (
+          <div className="panel overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead className="bg-bg-soft/80 text-[10px] uppercase tracking-widest text-ink-subtle">
+                  <tr>
+                    <th className="text-left px-3 py-2.5">Nama / No HP</th>
+                    <th className="text-left px-3 py-2.5">Pangkat / Unit</th>
+                    <th className="text-left px-3 py-2.5">Role</th>
+                    <th className="text-left px-3 py-2.5">Status</th>
+                    <th className="text-left px-3 py-2.5">Terdaftar</th>
+                    <th className="text-left px-3 py-2.5">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-8 text-center text-ink-subtle">
+                        Tidak ada user yang cocok dengan filter.
+                      </td>
+                    </tr>
+                  )}
+                  {filtered.map(u => (
+                    <UserRow
+                      key={u.id}
+                      user={u}
+                      onApprove={approve}
+                      onReject={reject}
+                      onDeactivate={deactivate}
+                      onDelete={removeUser}
+                      busy={busy === u.id}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -315,7 +591,7 @@ function UserRow({
           )}
         </td>
 
-        {/* Jabatan / unit */}
+        {/* Pangkat / unit */}
         <td className="px-3 py-2.5 text-ink-muted">
           <div>{user.jabatan ?? "—"}</div>
           {(user.unit_type || user.unit_name) && (

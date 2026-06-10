@@ -1,4 +1,4 @@
-import { qAll } from "../../api/v1/_lib";
+import { qAll } from "../../api/web/_lib";
 import UsersClient from "./users-client";
 import { getAdminStats } from "./admin-stats";
 

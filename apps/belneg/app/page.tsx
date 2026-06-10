@@ -317,17 +317,25 @@ function CeritaContent({ lang }: { lang: "id" | "en" }) {
 }
 
 function FaqContent({ lang }: { lang: "id" | "en" }) {
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   return (
     <div className="space-y-2.5">
-      {FAQ_ITEMS.map(({ qKey, aKey }) => (
-        <details key={qKey} className={cn("group rounded-md px-4 py-3 open:bg-white/80", CARD)}>
-          <summary className={cn("flex cursor-pointer list-none items-center justify-between gap-3 text-[13px] font-medium marker:content-none", INK)}>
-            {t(qKey, lang)}
-            <ChevronRight size={15} className={cn("shrink-0 transition group-open:rotate-90", INK_SUBTLE)} />
-          </summary>
-          <p className={cn("mt-2.5 text-[12.5px] leading-relaxed", INK_MUTED)}>{t(aKey, lang)}</p>
-        </details>
-      ))}
+      {FAQ_ITEMS.map(({ qKey, aKey }, index) => {
+        const isOpen = openFaqIndex === index;
+        return (
+          <div key={qKey} className={cn("rounded-md px-4 py-3 transition-colors", CARD, isOpen && "bg-white/80")}>
+            <button
+              type="button"
+              onClick={() => setOpenFaqIndex(isOpen ? null : index)}
+              className={cn("flex w-full cursor-pointer items-center justify-between gap-3 text-[13px] font-medium text-left", INK)}
+            >
+              {t(qKey, lang)}
+              <ChevronRight size={15} className={cn("shrink-0 transition", INK_SUBTLE, isOpen && "rotate-90")} />
+            </button>
+            {isOpen && <p className={cn("mt-2.5 text-[12.5px] leading-relaxed", INK_MUTED)}>{t(aKey, lang)}</p>}
+          </div>
+        );
+      })}
     </div>
   );
 }

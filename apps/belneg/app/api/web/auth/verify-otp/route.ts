@@ -92,6 +92,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Temp diagnostic: log role assignment without exposing sensitive data
+  console.log(`[auth] login OK | uid: ${user.id.slice(0, 8)}… | role: ${user.role}`);
+
   const token = await signWebToken({
     sub: user.id,
     full_name: user.full_name,

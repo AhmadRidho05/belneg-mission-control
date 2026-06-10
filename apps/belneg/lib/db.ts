@@ -1,7 +1,6 @@
 import "server-only";
 import { createClient, type Client, type InValue } from "@libsql/client";
 import { unstable_cache } from "next/cache";
-import { cache } from "react";
 
 let _client: Client | null = null;
 function client(): Client {
@@ -29,60 +28,418 @@ async function qGet<T>(sql: string, ...args: InValue[]): Promise<T | undefined> 
   return rows[0];
 }
 
-// ───────────────────────── Headline KPIs ─────────────────────────
+// ───────────────────────── KKRI Target KPI (kkri_target_korem/kodim/koramil) ─────────────────────────
+// Mission Briefing dashboard headline numbers, sourced from the curated KKRI target-school
+// tables (one row per target school per level) instead of the full DAPODIK dataset.
 
-export const headlineKpi = unstable_cache(
-  async () => {
-    return (await qGet<Record<string, number>>(`
+export type KkriTargetKpi = {
+  total_sekolah_target: number;
+  n_korem_target: number;
+  n_kodim_target: number;
+  n_koramil_target: number;
+  n_provinsi: number;
+  n_kabkota_target: number;
+  with_coords: number;
+  without_coords: number;
+};
+
+export const kkriTargetKpi = unstable_cache(
+  async (): Promise<KkriTargetKpi> => {
+    return (await qGet<KkriTargetKpi>(`
       SELECT
-        (SELECT COUNT(*) FROM fact_satpen_dikmen) AS total_sekolah,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE UPPER(status_sekolah)='NEGERI') AS total_negeri,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE UPPER(status_sekolah)='SWASTA') AS total_swasta,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE bentuk_pendidikan='SMA') AS total_sma,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE bentuk_pendidikan='SMK') AS total_smk,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE bentuk_pendidikan IN ('MA','MAK','SMAK','SMTK','SMAG.K')) AS total_ma,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE akreditasi='A') AS akr_a,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE akreditasi='B') AS akr_b,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE akreditasi='C') AS akr_c,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE lintang IS NOT NULL AND bujur IS NOT NULL) AS with_coords,
-        (SELECT COUNT(*) FROM fact_yayasan) AS total_yayasan,
-        (SELECT COUNT(*) FROM fact_yayasan_naungan) AS total_naungan,
-        (SELECT COUNT(*) FROM dim_kodam) AS n_kodam,
-        (SELECT COUNT(*) FROM dim_korem WHERE is_berdiri_sendiri=0) AS n_korem,
-        (SELECT COUNT(*) FROM dim_kodim) AS n_kodim,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen WHERE kab_norm IN (SELECT kabupaten_norm FROM dim_kodim)) AS sekolah_dgn_kodim,
-        (SELECT COUNT(DISTINCT province_kd) FROM fact_satpen_dikmen) AS n_provinsi
+        (SELECT COUNT(DISTINCT npsn) FROM (
+          SELECT npsn FROM kkri_target_korem
+          UNION SELECT npsn FROM kkri_target_kodim
+          UNION SELECT npsn FROM kkri_target_koramil
+        )) AS total_sekolah_target,
+        (SELECT COUNT(DISTINCT korem) FROM kkri_target_korem) AS n_korem_target,
+        (SELECT COUNT(DISTINCT kodim) FROM kkri_target_kodim) AS n_kodim_target,
+        (SELECT COUNT(*) FROM kkri_target_koramil) AS n_koramil_target,
+        (SELECT COUNT(DISTINCT provinsi) FROM (
+          SELECT UPPER(provinsi_sekolah) AS provinsi FROM kkri_target_korem
+          UNION SELECT UPPER(provinsi) FROM kkri_target_kodim
+          UNION SELECT UPPER(provinsi) FROM kkri_target_koramil
+        )) AS n_provinsi,
+        (SELECT COUNT(DISTINCT kab_kota_sekolah) FROM (
+          SELECT kab_kota_sekolah FROM kkri_target_korem
+          UNION SELECT kab_kota_sekolah FROM kkri_target_kodim
+          UNION SELECT kab_kota_sekolah FROM kkri_target_koramil
+        )) AS n_kabkota_target,
+        (
+          (SELECT COUNT(*) FROM kkri_target_korem WHERE lintang IS NOT NULL AND bujur IS NOT NULL) +
+          (SELECT COUNT(*) FROM kkri_target_kodim WHERE lintang IS NOT NULL AND bujur IS NOT NULL) +
+          (SELECT COUNT(*) FROM kkri_target_koramil WHERE lintang IS NOT NULL AND bujur IS NOT NULL)
+        ) AS with_coords,
+        (
+          (SELECT COUNT(*) FROM kkri_target_korem WHERE lintang IS NULL OR bujur IS NULL) +
+          (SELECT COUNT(*) FROM kkri_target_kodim WHERE lintang IS NULL OR bujur IS NULL) +
+          (SELECT COUNT(*) FROM kkri_target_koramil WHERE lintang IS NULL OR bujur IS NULL)
+        ) AS without_coords
     `))!;
   },
-  ["headline-kpi-v3"],
+  ["kkri-target-kpi-v1"],
   { revalidate: 3600 }
 );
 
-// ───────────────────────── Kodam summary ─────────────────────────
+// Komposisi bentuk sekolah (SMA/SMK/MA/...) across all 3 target levels.
+export const targetBentukDistribution = unstable_cache(
+  async () => qAll<{ bentuk: string; n: number }>(`
+    SELECT COALESCE(bentuk, 'Tidak diisi') AS bentuk, COUNT(*) AS n
+    FROM (
+      SELECT bentuk FROM kkri_target_korem
+      UNION ALL SELECT bentuk FROM kkri_target_kodim
+      UNION ALL SELECT bentuk FROM kkri_target_koramil
+    )
+    GROUP BY 1
+    ORDER BY 2 DESC
+  `),
+  ["target-bentuk-v1"],
+  { revalidate: 3600 }
+);
 
-export type KodamRow = {
-  kodam_id: string; kodam_name: string;
-  n_korem: number; n_kodim: number;
-  n_sekolah: number; n_akreditasi_a: number;
-  n_negeri: number; n_swasta: number;
-  ratio_sekolah_per_kodim: number;
+// Komposisi akreditasi across all 3 target levels.
+export const targetAkreditasiBreakdown = unstable_cache(
+  async () => qAll<{ level: string; n: number }>(`
+    SELECT
+      CASE
+        WHEN akreditasi='A' THEN 'A'
+        WHEN akreditasi='B' THEN 'B'
+        WHEN akreditasi='C' THEN 'C'
+        WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
+        ELSE 'BT'
+      END AS level,
+      COUNT(*) AS n
+    FROM (
+      SELECT akreditasi FROM kkri_target_korem
+      UNION ALL SELECT akreditasi FROM kkri_target_kodim
+      UNION ALL SELECT akreditasi FROM kkri_target_koramil
+    )
+    GROUP BY 1
+    ORDER BY 2 DESC
+  `),
+  ["target-akreditasi-v1"],
+  { revalidate: 3600 }
+);
+
+// Status akses internet across all 3 target levels.
+export const targetInternetBreakdown = unstable_cache(
+  async () => qAll<{ akses: string; n: number }>(`
+    SELECT
+      CASE
+        WHEN internet IS NULL OR internet='' OR internet='N/A' THEN 'Tidak ada data'
+        WHEN UPPER(internet)='TIDAK ADA' THEN 'Tidak ada'
+        ELSE internet
+      END AS akses,
+      COUNT(*) AS n
+    FROM (
+      SELECT internet FROM kkri_target_korem
+      UNION ALL SELECT internet FROM kkri_target_kodim
+      UNION ALL SELECT internet FROM kkri_target_koramil
+    )
+    GROUP BY 1
+    ORDER BY 2 DESC
+  `),
+  ["target-internet-v1"],
+  { revalidate: 3600 }
+);
+
+// Distribusi sekolah target per KODAM (level KORAMIL = paling detail/granular).
+export type TargetKodamRow = {
+  kodam: string;
+  n_koramil_target: number;
+  n_sekolah_target: number;
+  n_akreditasi_a: number;
   pct_akreditasi_a: number;
+  avg_sekolah_per_koramil: number;
 };
 
-export const kodamSummary = unstable_cache(
-  async (): Promise<KodamRow[]> => {
-    const rows = await qAll<Omit<KodamRow, "ratio_sekolah_per_kodim" | "pct_akreditasi_a">>(`
-      SELECT kodam_id, kodam_name, n_korem, n_kodim, n_sekolah, n_akreditasi_a, n_negeri, n_swasta
-      FROM vw_kodam_school_summary
-      ORDER BY n_sekolah DESC
+export const targetKodamSummary = unstable_cache(
+  async (): Promise<TargetKodamRow[]> => {
+    const rows = await qAll<Omit<TargetKodamRow, "pct_akreditasi_a" | "avg_sekolah_per_koramil">>(`
+      SELECT
+        COALESCE(kodam, 'Tidak diisi') AS kodam,
+        COUNT(DISTINCT koramil) AS n_koramil_target,
+        COUNT(*) AS n_sekolah_target,
+        SUM(CASE WHEN akreditasi='A' THEN 1 ELSE 0 END) AS n_akreditasi_a
+      FROM kkri_target_koramil
+      GROUP BY kodam
+      ORDER BY n_sekolah_target DESC
     `);
     return rows.map(r => ({
       ...r,
-      ratio_sekolah_per_kodim: r.n_kodim > 0 ? r.n_sekolah / r.n_kodim : 0,
-      pct_akreditasi_a: r.n_sekolah > 0 ? (r.n_akreditasi_a / r.n_sekolah) * 100 : 0,
+      pct_akreditasi_a: r.n_sekolah_target > 0 ? (r.n_akreditasi_a / r.n_sekolah_target) * 100 : 0,
+      avg_sekolah_per_koramil: r.n_koramil_target > 0 ? r.n_sekolah_target / r.n_koramil_target : 0,
     }));
   },
-  ["kodam-summary-v4"],
+  ["target-kodam-summary-v1"],
+  { revalidate: 3600 }
+);
+
+// Distribusi sekolah target per provinsi across all 3 target levels.
+export const targetProvinceDistribution = unstable_cache(
+  async (limit: number = 8) => qAll<{ provinsi: string; n: number }>(`
+    SELECT provinsi, COUNT(*) AS n
+    FROM (
+      SELECT UPPER(provinsi_sekolah) AS provinsi FROM kkri_target_korem
+      UNION ALL SELECT UPPER(provinsi) AS provinsi FROM kkri_target_kodim
+      UNION ALL SELECT UPPER(provinsi) AS provinsi FROM kkri_target_koramil
+    )
+    WHERE provinsi IS NOT NULL
+    GROUP BY provinsi
+    ORDER BY n DESC
+    LIMIT ?
+  `, limit),
+  ["target-province-dist-v1"],
+  { revalidate: 3600 }
+);
+
+// Top KOREM by jumlah sekolah target (level KOREM).
+export type TargetKoremRow = {
+  korem: string;
+  kodam: string;
+  kab_kota_markas: string;
+  n_sekolah_target: number;
+  n_akreditasi_a: number;
+  pct_akreditasi_a: number;
+};
+
+export const targetKoremSummary = unstable_cache(
+  async (): Promise<TargetKoremRow[]> => {
+    const rows = await qAll<Omit<TargetKoremRow, "pct_akreditasi_a">>(`
+      SELECT
+        COALESCE(korem, 'Tidak diisi') AS korem,
+        COALESCE(kodam, 'Tidak diisi') AS kodam,
+        COALESCE(kab_kota_markas, '-') AS kab_kota_markas,
+        COUNT(*) AS n_sekolah_target,
+        SUM(CASE WHEN akreditasi='A' THEN 1 ELSE 0 END) AS n_akreditasi_a
+      FROM kkri_target_korem
+      GROUP BY korem, kodam, kab_kota_markas
+      ORDER BY n_sekolah_target DESC
+    `);
+    return rows.map(r => ({
+      ...r,
+      pct_akreditasi_a: r.n_sekolah_target > 0 ? (r.n_akreditasi_a / r.n_sekolah_target) * 100 : 0,
+    }));
+  },
+  ["target-korem-summary-v1"],
+  { revalidate: 3600 }
+);
+
+// Beban per KORAMIL by jumlah sekolah target (level KORAMIL).
+export type TargetKoramilRow = {
+  koramil: string;
+  kodam: string;
+  kab_kota: string;
+  n_sekolah_target: number;
+  n_akreditasi_a: number;
+};
+
+export const targetKoramilSummary = unstable_cache(
+  async (limit: number = 15): Promise<TargetKoramilRow[]> => qAll<TargetKoramilRow>(`
+    SELECT
+      COALESCE(koramil, 'Tidak diisi') AS koramil,
+      COALESCE(kodam, 'Tidak diisi') AS kodam,
+      COALESCE(kab_kota, '-') AS kab_kota,
+      COUNT(*) AS n_sekolah_target,
+      SUM(CASE WHEN akreditasi='A' THEN 1 ELSE 0 END) AS n_akreditasi_a
+    FROM kkri_target_koramil
+    GROUP BY koramil, kodam, kab_kota
+    ORDER BY n_sekolah_target DESC
+    LIMIT ?
+  `, limit),
+  ["target-koramil-summary-v1"],
+  { revalidate: 3600 }
+);
+
+// Top kabupaten/kota by jumlah sekolah target across all 3 levels.
+export const targetKabKotaDistribution = unstable_cache(
+  async (limit: number = 15) => qAll<{ kab_kota: string; n: number }>(`
+    SELECT kab_kota, COUNT(*) AS n
+    FROM (
+      SELECT UPPER(kab_kota_sekolah) AS kab_kota FROM kkri_target_korem
+      UNION ALL SELECT UPPER(kab_kota_sekolah) AS kab_kota FROM kkri_target_kodim
+      UNION ALL SELECT UPPER(kab_kota_sekolah) AS kab_kota FROM kkri_target_koramil
+    )
+    WHERE kab_kota IS NOT NULL AND kab_kota != ''
+    GROUP BY kab_kota
+    ORDER BY n DESC
+    LIMIT ?
+  `, limit),
+  ["target-kabkota-dist-v1"],
+  { revalidate: 3600 }
+);
+
+// Top kecamatan by jumlah sekolah target across all 3 levels.
+export const targetKecamatanDistribution = unstable_cache(
+  async (limit: number = 15) => qAll<{ kecamatan: string; n: number }>(`
+    SELECT kecamatan, COUNT(*) AS n
+    FROM (
+      SELECT UPPER(kecamatan) AS kecamatan FROM kkri_target_korem
+      UNION ALL SELECT UPPER(kecamatan) AS kecamatan FROM kkri_target_kodim
+      UNION ALL SELECT UPPER(kecamatan) AS kecamatan FROM kkri_target_koramil
+    )
+    WHERE kecamatan IS NOT NULL AND kecamatan != ''
+    GROUP BY kecamatan
+    ORDER BY n DESC
+    LIMIT ?
+  `, limit),
+  ["target-kecamatan-dist-v1"],
+  { revalidate: 3600 }
+);
+
+// Distribusi pulau — hanya tersedia pada kkri_target_koramil.
+export const targetPulauDistribution = unstable_cache(
+  async () => qAll<{ pulau: string; n: number }>(`
+    SELECT COALESCE(pulau, 'Tidak diisi') AS pulau, COUNT(*) AS n
+    FROM kkri_target_koramil
+    GROUP BY pulau
+    ORDER BY n DESC
+  `),
+  ["target-pulau-dist-v1"],
+  { revalidate: 3600 }
+);
+
+// Klasifikasi posisi sekolah (mis. perkotaan/pedesaan) across all 3 target levels.
+export const targetPosisiBreakdown = unstable_cache(
+  async () => qAll<{ posisi: string; n: number }>(`
+    SELECT COALESCE(posisi, 'Tidak diisi') AS posisi, COUNT(*) AS n
+    FROM (
+      SELECT posisi FROM kkri_target_korem
+      UNION ALL SELECT posisi FROM kkri_target_kodim
+      UNION ALL SELECT posisi FROM kkri_target_koramil
+    )
+    GROUP BY 1
+    ORDER BY 2 DESC
+  `),
+  ["target-posisi-v1"],
+  { revalidate: 3600 }
+);
+
+// Provinsi × bentuk sekolah across all 3 target levels (treemap source).
+export const targetProvinceBentukTree = unstable_cache(
+  async () => qAll<{ provinsi: string; bentuk: string; n: number }>(`
+    SELECT provinsi, COALESCE(bentuk, 'Tidak diisi') AS bentuk, COUNT(*) AS n
+    FROM (
+      SELECT UPPER(provinsi_sekolah) AS provinsi, bentuk FROM kkri_target_korem
+      UNION ALL SELECT UPPER(provinsi) AS provinsi, bentuk FROM kkri_target_kodim
+      UNION ALL SELECT UPPER(provinsi) AS provinsi, bentuk FROM kkri_target_koramil
+    )
+    WHERE provinsi IS NOT NULL
+    GROUP BY provinsi, bentuk
+    ORDER BY provinsi ASC, n DESC
+  `),
+  ["target-province-bentuk-tree-v1"],
+  { revalidate: 3600 }
+);
+
+// Jumlah baris sekolah target per level (KOREM/KODIM/KORAMIL).
+export const targetLevelDistribution = unstable_cache(
+  async () => qAll<{ level: string; n: number }>(`
+    SELECT 'KOREM' AS level, COUNT(*) AS n FROM kkri_target_korem
+    UNION ALL
+    SELECT 'KODIM' AS level, COUNT(*) AS n FROM kkri_target_kodim
+    UNION ALL
+    SELECT 'KORAMIL' AS level, COUNT(*) AS n FROM kkri_target_koramil
+  `),
+  ["target-level-dist-v1"],
+  { revalidate: 3600 }
+);
+
+// Full directory of target schools across all 3 levels — backs the /visualisasi
+// "Daftar Sekolah Target" table and the /mapping markers.
+export type TargetSchoolRow = {
+  npsn: string;
+  nama: string;
+  bentuk: string;
+  akreditasi: string;
+  internet: string;
+  posisi: string;
+  level: "KOREM" | "KODIM" | "KORAMIL";
+  unit: string;
+  kodam: string | null;
+  provinsi: string;
+  kab_kota: string;
+  kecamatan: string | null;
+  lat: number | null;
+  lng: number | null;
+};
+
+export const targetSchoolDirectory = unstable_cache(
+  async (): Promise<TargetSchoolRow[]> => qAll<TargetSchoolRow>(`
+    SELECT npsn, nama_sekolah AS nama, COALESCE(bentuk, '-') AS bentuk,
+           CASE
+             WHEN akreditasi='A' THEN 'A'
+             WHEN akreditasi='B' THEN 'B'
+             WHEN akreditasi='C' THEN 'C'
+             WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
+             ELSE 'BT'
+           END AS akreditasi,
+           COALESCE(internet, 'Tidak ada data') AS internet,
+           COALESCE(posisi, '-') AS posisi,
+           'KOREM' AS level, korem AS unit, kodam,
+           UPPER(provinsi_sekolah) AS provinsi, kab_kota_sekolah AS kab_kota, kecamatan,
+           lintang AS lat, bujur AS lng
+    FROM kkri_target_korem
+    UNION ALL
+    SELECT npsn, nama_sekolah, COALESCE(bentuk, '-'),
+           CASE
+             WHEN akreditasi='A' THEN 'A'
+             WHEN akreditasi='B' THEN 'B'
+             WHEN akreditasi='C' THEN 'C'
+             WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
+             ELSE 'BT'
+           END,
+           COALESCE(internet, 'Tidak ada data'),
+           COALESCE(posisi, '-'),
+           'KODIM', kodim, NULL,
+           UPPER(provinsi), kab_kota_sekolah, kecamatan,
+           lintang, bujur
+    FROM kkri_target_kodim
+    UNION ALL
+    SELECT npsn, nama_sekolah, COALESCE(bentuk, '-'),
+           CASE
+             WHEN akreditasi='A' THEN 'A'
+             WHEN akreditasi='B' THEN 'B'
+             WHEN akreditasi='C' THEN 'C'
+             WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
+             ELSE 'BT'
+           END,
+           COALESCE(internet, 'Tidak ada data'),
+           COALESCE(posisi, '-'),
+           'KORAMIL', koramil, kodam,
+           UPPER(provinsi), kab_kota_sekolah, kecamatan,
+           lintang, bujur
+    FROM kkri_target_koramil
+    ORDER BY provinsi ASC, kab_kota ASC, nama ASC
+  `),
+  ["target-school-directory-v1"],
+  { revalidate: 3600 }
+);
+
+// Per-KODAM centroid (rata-rata koordinat koramil target) + jumlah sekolah/koramil
+// target — pengganti marker markas KODAM/KOREM/KODIM di /mapping karena tabel
+// target tidak menyimpan koordinat markas.
+export type TargetKodamAgg = {
+  kodam: string;
+  n_sekolah_target: number;
+  n_koramil_target: number;
+  lat: number;
+  lng: number;
+};
+
+export const targetKodamAggregates = unstable_cache(
+  async (): Promise<TargetKodamAgg[]> => qAll<TargetKodamAgg>(`
+    SELECT
+      COALESCE(kodam, 'Tidak diisi') AS kodam,
+      COUNT(*) AS n_sekolah_target,
+      COUNT(DISTINCT koramil) AS n_koramil_target,
+      AVG(lintang) AS lat,
+      AVG(bujur) AS lng
+    FROM kkri_target_koramil
+    WHERE lintang IS NOT NULL AND bujur IS NOT NULL
+    GROUP BY kodam
+  `),
+  ["target-kodam-aggregates-v1"],
   { revalidate: 3600 }
 );
 
@@ -132,294 +489,7 @@ export const kodimSummary = unstable_cache(
   { revalidate: 3600 }
 );
 
-// ───────────────────────── Sankey hierarchy ─────────────────────────
-
-export const sankeyKodamHierarchy = unstable_cache(
-  async (topN: number = 5) => {
-    const topKodam = await qAll<{ kodam_id: string; kodam_name: string; n_sekolah: number }>(`
-      SELECT kodam_id, kodam_name, n_sekolah FROM vw_kodam_school_summary
-      ORDER BY n_sekolah DESC LIMIT ?
-    `, topN);
-    const kodamIds = topKodam.map(k => k.kodam_id);
-    if (!kodamIds.length) return { nodes: [], links: [] };
-
-    const placeholders = kodamIds.map(() => "?").join(",");
-    const koremRows = await qAll<{ korem_id: string; korem_name: string; kodam_id: string; n_sekolah: number }>(`
-      SELECT
-        kr.korem_id, kr.name AS korem_name, kr.kodam_id,
-        (SELECT COUNT(*) FROM vw_satpen_with_kodim s WHERE s.korem_id = kr.korem_id) AS n_sekolah
-      FROM dim_korem kr
-      WHERE kr.kodam_id IN (${placeholders}) AND kr.is_berdiri_sendiri = 0
-    `, ...kodamIds);
-
-    const nodes: { id: string; label: string }[] = [];
-    const seen = new Set<string>();
-    const addNode = (id: string, label: string) => {
-      if (!seen.has(id)) { seen.add(id); nodes.push({ id, label }); }
-    };
-    topKodam.forEach(k => addNode(`KD-${k.kodam_id}`, k.kodam_name));
-    koremRows.forEach(k => addNode(`KR-${k.korem_id}`, k.korem_name));
-
-    const links: { source: string; target: string; value: number }[] = [];
-    koremRows.filter(k => k.n_sekolah > 0).forEach(k => {
-      links.push({ source: `KD-${k.kodam_id}`, target: `KR-${k.korem_id}`, value: k.n_sekolah });
-    });
-    // Berdiri Sendiri rollup per kodam
-    const bsResults = await Promise.all(
-      topKodam.map(k => qGet<{ n: number }>(`
-        SELECT COUNT(*) AS n FROM vw_satpen_with_kodim s
-        WHERE s.kodam_id = ? AND s.korem_id IN (SELECT korem_id FROM dim_korem WHERE kodam_id = ? AND is_berdiri_sendiri = 1)
-      `, k.kodam_id, k.kodam_id))
-    );
-    bsResults.forEach((bs, i) => {
-      const k = topKodam[i];
-      if (bs && bs.n > 0) {
-        addNode(`BS-${k.kodam_id}`, "Berdiri Sendiri");
-        links.push({ source: `KD-${k.kodam_id}`, target: `BS-${k.kodam_id}`, value: bs.n });
-      }
-    });
-    return { nodes: nodes.map(n => ({ id: n.id, nodeColor: "#f59e0b", label: n.label })), links };
-  },
-  ["sankey-kodam-v4"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Sankey: ALL KODAM → KODIM → kab/kota ─────────────────────────
-
-export const sankeyAllKodamKodimKab = unstable_cache(
-  async (minSekolahPerKodim: number = 5) => {
-    const kodimRows = await qAll<{
-      kodim_id: string; kodim_name: string; kabupaten_kota: string; kabupaten_norm: string;
-      kodam_id: string; kodam_name: string; n_sekolah: number;
-    }>(`
-      SELECT
-        k.kodim_id, k.name AS kodim_name, k.kabupaten_kota, k.kabupaten_norm,
-        kd.kodam_id, kd.name AS kodam_name,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = k.kabupaten_norm) AS n_sekolah
-      FROM dim_kodim k
-      JOIN dim_kodam kd ON kd.kodam_id = k.kodam_id
-    `);
-
-    const active = kodimRows.filter(r => r.n_sekolah >= minSekolahPerKodim);
-
-    const nodes: { id: string; label: string; level: 0 | 1 | 2; meta?: Record<string, string> }[] = [];
-    const seen = new Set<string>();
-    const addNode = (id: string, label: string, level: 0 | 1 | 2, meta?: Record<string, string>) => {
-      if (seen.has(id)) return;
-      seen.add(id);
-      nodes.push({ id, label, level, meta });
-    };
-
-    const links: { source: string; target: string; value: number }[] = [];
-
-    for (const r of active) {
-      const kodamNode = `KD-${r.kodam_id}`;
-      const kodimNode = `KM-${r.kodim_id}`;
-      const kabNode = `KAB-${r.kabupaten_norm}`;
-      addNode(kodamNode, r.kodam_name.replace(/^Kodam\s+/, ""), 0, { kodam_id: r.kodam_id });
-      addNode(kodimNode, r.kodim_name.replace(/^Kodim\s+\d+\//, ""), 1, { kodim_id: r.kodim_id, kab: r.kabupaten_kota });
-      addNode(kabNode, r.kabupaten_kota, 2, { kab: r.kabupaten_kota });
-      links.push({ source: kodamNode, target: kodimNode, value: r.n_sekolah });
-      links.push({ source: kodimNode, target: kabNode, value: r.n_sekolah });
-    }
-    return { nodes, links, total_kodim: active.length, total_kab: nodes.filter(n => n.level === 2).length };
-  },
-  ["sankey-all-kodam-kodim-v3"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Treemap province × bentuk ─────────────────────────
-
-export const provinceBentukTree = unstable_cache(
-  async () => qAll<{ province: string; bentuk: string; n: number }>(`
-    SELECT
-      REPLACE(provinsi, 'PROV. ', '') AS province,
-      bentuk_pendidikan AS bentuk,
-      COUNT(*) AS n
-    FROM fact_satpen_dikmen
-    WHERE provinsi IS NOT NULL AND bentuk_pendidikan IS NOT NULL
-    GROUP BY provinsi, bentuk_pendidikan
-  `),
-  ["province-bentuk-treemap-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Akreditasi distribusi ─────────────────────────
-
-export const akreditasiBreakdown = unstable_cache(
-  async () => qAll<{ level: string; n: number }>(`
-    SELECT
-      CASE
-        WHEN akreditasi='A' THEN 'A'
-        WHEN akreditasi='B' THEN 'B'
-        WHEN akreditasi='C' THEN 'C'
-        WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
-        WHEN akreditasi IS NULL OR akreditasi='' THEN 'BT'
-        ELSE 'Lain'
-      END AS level,
-      COUNT(*) AS n
-    FROM fact_satpen_dikmen
-    GROUP BY 1
-    ORDER BY 2 DESC
-  `),
-  ["akreditasi-breakdown-v2"],
-  { revalidate: 3600 }
-);
-
-export const akreditasiByProvince = unstable_cache(
-  async () => qAll<{ province: string; A: number; B: number; C: number; TT: number; total: number }>(`
-    SELECT
-      REPLACE(provinsi, 'PROV. ', '') AS province,
-      SUM(CASE WHEN akreditasi='A' THEN 1 ELSE 0 END) AS A,
-      SUM(CASE WHEN akreditasi='B' THEN 1 ELSE 0 END) AS B,
-      SUM(CASE WHEN akreditasi='C' THEN 1 ELSE 0 END) AS C,
-      SUM(CASE WHEN akreditasi LIKE '%TIDAK%' THEN 1 ELSE 0 END) AS TT,
-      COUNT(*) AS total
-    FROM fact_satpen_dikmen
-    WHERE provinsi IS NOT NULL
-    GROUP BY provinsi
-    ORDER BY total DESC
-    LIMIT 12
-  `),
-  ["akreditasi-by-province-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Status & infra distribution ─────────────────────────
-
-export const statusBreakdown = unstable_cache(
-  async () => qAll<{ status: string; n: number }>(`
-    SELECT UPPER(status_sekolah) AS status, COUNT(*) AS n
-    FROM fact_satpen_dikmen
-    WHERE status_sekolah IS NOT NULL AND status_sekolah != ''
-    GROUP BY 1
-  `),
-  ["status-breakdown-v2"],
-  { revalidate: 3600 }
-);
-
-export const internetBreakdown = unstable_cache(
-  async () => qAll<{ akses: string; n: number }>(`
-    SELECT
-      CASE
-        WHEN akses_internet IS NULL OR akses_internet='' THEN 'Tidak ada data'
-        WHEN UPPER(akses_internet)='TIDAK ADA' THEN 'Tidak ada'
-        ELSE akses_internet
-      END AS akses,
-      COUNT(*) AS n
-    FROM fact_satpen_dikmen
-    GROUP BY 1
-    ORDER BY 2 DESC
-  `),
-  ["internet-breakdown-v2"],
-  { revalidate: 3600 }
-);
-
-export const listrikBreakdown = unstable_cache(
-  async () => qAll<{ sumber: string; n: number }>(`
-    SELECT
-      CASE
-        WHEN sumber_listrik IS NULL OR sumber_listrik='' THEN 'Tidak ada data'
-        ELSE sumber_listrik
-      END AS sumber,
-      COUNT(*) AS n
-    FROM fact_satpen_dikmen
-    GROUP BY 1
-    ORDER BY 2 DESC
-  `),
-  ["listrik-breakdown-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Yayasan ─────────────────────────
-
-export const topYayasan = unstable_cache(
-  async (limit: number = 15) => qAll<{ npyp: string; nama: string; provinsi: string; n_naungan: number }>(`
-    SELECT npyp,
-           judul AS nama,
-           REPLACE(COALESCE(nama_provinsi,''), 'PROV. ', '') AS provinsi,
-           n_sekolah_naungan AS n_naungan
-    FROM fact_yayasan
-    WHERE n_sekolah_naungan IS NOT NULL AND n_sekolah_naungan > 0
-    ORDER BY n_sekolah_naungan DESC
-    LIMIT ?
-  `, limit),
-  ["top-yayasan-v3"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Scatter luas vs akreditasi ─────────────────────────
-
-export const scatterLuasAkreditasi = unstable_cache(
-  async (sampleSize: number = 4000) => qAll<{ npsn: string; x: number; akreditasi: string }>(`
-    SELECT npsn, luas_tanah AS x, akreditasi
-    FROM fact_satpen_dikmen
-    WHERE luas_tanah IS NOT NULL AND luas_tanah BETWEEN 100 AND 200000
-      AND akreditasi IN ('A','B','C')
-    ORDER BY RANDOM()
-    LIMIT ?
-  `, sampleSize),
-  ["scatter-luas-akr-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Trend peserta didik 2023-2026 (SMA & SMK) ─────────────────────────
-
-export const trendPesertaDidik = unstable_cache(
-  async () => {
-    type R = { kind: string; province_kd: string; col_index: number; value: number };
-    const rows = await qAll<R>(`
-      SELECT kind, province_kd, col_index, value
-      FROM fact_stat_long
-      WHERE table_code = '1.3.2' AND col_index BETWEEN 1 AND 9
-    `);
-
-    const years = ["2023/2024", "2024/2025", "2025/2026"];
-    const buckets: Record<string, { year: string; sma_negeri: number; sma_swasta: number; smk_negeri: number; smk_swasta: number }> = {};
-    years.forEach(y => { buckets[y] = { year: y, sma_negeri: 0, sma_swasta: 0, smk_negeri: 0, smk_swasta: 0 }; });
-
-    rows.forEach(r => {
-      const yearIdx = Math.floor((r.col_index - 1) / 3);
-      const sub = (r.col_index - 1) % 3;
-      if (yearIdx > 2 || sub === 2) return;
-      const year = years[yearIdx];
-      const key = `${r.kind}_${sub === 0 ? "negeri" : "swasta"}` as keyof typeof buckets[string];
-      (buckets[year] as any)[key] += r.value || 0;
-    });
-    return years.map(y => buckets[y]);
-  },
-  ["trend-pd-1-3-2-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Bubble kabupaten cross-domain ─────────────────────────
-
-export const bubbleKabupaten = unstable_cache(
-  async () => {
-    const rows = await qAll<{ kab_kota: string; provinsi: string; n_sekolah: number; n_a: number; n_kodim: number }>(`
-      SELECT
-        s.kab_kota,
-        s.provinsi,
-        COUNT(*) AS n_sekolah,
-        SUM(CASE WHEN s.akreditasi='A' THEN 1 ELSE 0 END) AS n_a,
-        (SELECT COUNT(*) FROM dim_kodim k WHERE k.kabupaten_norm = s.kab_norm) AS n_kodim
-      FROM fact_satpen_dikmen s
-      WHERE s.kab_kota IS NOT NULL
-      GROUP BY s.kab_kota, s.provinsi
-      HAVING n_sekolah >= 50
-      ORDER BY n_sekolah DESC
-      LIMIT 120
-    `);
-    return rows.map(r => ({
-      ...r,
-      pct_a: r.n_sekolah > 0 ? (r.n_a / r.n_sekolah) * 100 : 0,
-    }));
-  },
-  ["bubble-kab-v2"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── SK timeline (Pendirian + Operasional) ─────────────────────────
+// ───────────────────────── SK timeline per kodim ─────────────────────────
 const SK_MIN_YEAR = 1945;
 const SK_MAX_YEAR = 2026;
 
@@ -428,99 +498,6 @@ export type SkYear = {
   sk_pendirian: number;
   sk_operasional: number;
 };
-
-export const skTimelineAll = unstable_cache(
-  async (): Promise<SkYear[]> => {
-    const [pend, oper] = await Promise.all([
-      qAll<{ year: number; n: number }>(`
-        SELECT CAST(strftime('%Y', tgl_sk_pendirian) AS INTEGER) AS year, COUNT(*) AS n
-        FROM fact_satpen_dikmen
-        WHERE tgl_sk_pendirian IS NOT NULL AND tgl_sk_pendirian != ''
-        GROUP BY year
-        HAVING year BETWEEN ? AND ?
-      `, SK_MIN_YEAR, SK_MAX_YEAR),
-      qAll<{ year: number; n: number }>(`
-        SELECT CAST(strftime('%Y', tgl_sk_operasional) AS INTEGER) AS year, COUNT(*) AS n
-        FROM fact_satpen_dikmen
-        WHERE tgl_sk_operasional IS NOT NULL AND tgl_sk_operasional != ''
-        GROUP BY year
-        HAVING year BETWEEN ? AND ?
-      `, SK_MIN_YEAR, SK_MAX_YEAR),
-    ]);
-
-    const map = new Map<number, SkYear>();
-    for (let y = SK_MIN_YEAR; y <= SK_MAX_YEAR; y++) {
-      map.set(y, { year: y, sk_pendirian: 0, sk_operasional: 0 });
-    }
-    pend.forEach(r => { const e = map.get(r.year); if (e) e.sk_pendirian = r.n; });
-    oper.forEach(r => { const e = map.get(r.year); if (e) e.sk_operasional = r.n; });
-    return Array.from(map.values());
-  },
-  ["sk-timeline-all-v2"],
-  { revalidate: 3600 }
-);
-
-type StackedTimelineRow = { year: number; [key: string]: number };
-
-export const skTimelineByAkreditasi = unstable_cache(
-  async (dateCol: "pendirian" | "operasional" = "pendirian"): Promise<StackedTimelineRow[]> => {
-    const col = dateCol === "pendirian" ? "tgl_sk_pendirian" : "tgl_sk_operasional";
-    const rows = await qAll<{ year: number; level: string; n: number }>(`
-      SELECT
-        CAST(strftime('%Y', ${col}) AS INTEGER) AS year,
-        CASE
-          WHEN akreditasi='A' THEN 'A'
-          WHEN akreditasi='B' THEN 'B'
-          WHEN akreditasi='C' THEN 'C'
-          WHEN akreditasi LIKE '%TIDAK%' THEN 'TT'
-          ELSE 'BT'
-        END AS level,
-        COUNT(*) AS n
-      FROM fact_satpen_dikmen
-      WHERE ${col} IS NOT NULL AND ${col} != ''
-      GROUP BY year, level
-      HAVING year BETWEEN ? AND ?
-    `, SK_MIN_YEAR, SK_MAX_YEAR);
-
-    const map = new Map<number, StackedTimelineRow>();
-    for (let y = SK_MIN_YEAR; y <= SK_MAX_YEAR; y++) {
-      map.set(y, { year: y, A: 0, B: 0, C: 0, TT: 0, BT: 0 });
-    }
-    rows.forEach(r => { const e = map.get(r.year); if (e) e[r.level] = r.n; });
-    return Array.from(map.values());
-  },
-  ["sk-timeline-akreditasi-v2"],
-  { revalidate: 3600 }
-);
-
-export const skTimelineByStatus = unstable_cache(
-  async (dateCol: "pendirian" | "operasional" = "pendirian"): Promise<StackedTimelineRow[]> => {
-    const col = dateCol === "pendirian" ? "tgl_sk_pendirian" : "tgl_sk_operasional";
-    const rows = await qAll<{ year: number; status: string; n: number }>(`
-      SELECT
-        CAST(strftime('%Y', ${col}) AS INTEGER) AS year,
-        UPPER(status_sekolah) AS status,
-        COUNT(*) AS n
-      FROM fact_satpen_dikmen
-      WHERE ${col} IS NOT NULL AND ${col} != ''
-        AND status_sekolah IS NOT NULL AND status_sekolah != ''
-      GROUP BY year, status
-      HAVING year BETWEEN ? AND ?
-    `, SK_MIN_YEAR, SK_MAX_YEAR);
-
-    const map = new Map<number, StackedTimelineRow>();
-    for (let y = SK_MIN_YEAR; y <= SK_MAX_YEAR; y++) {
-      map.set(y, { year: y, Negeri: 0, Swasta: 0 });
-    }
-    rows.forEach(r => {
-      const e = map.get(r.year);
-      if (e) e[r.status === "NEGERI" ? "Negeri" : "Swasta"] = r.n;
-    });
-    return Array.from(map.values());
-  },
-  ["sk-timeline-status-v2"],
-  { revalidate: 3600 }
-);
 
 export const skTimelineByKodim = async (kodimId: string): Promise<SkYear[]> => {
   const [pend, oper] = await Promise.all([
@@ -556,132 +533,6 @@ export const skTimelineByKodim = async (kodimId: string): Promise<SkYear[]> => {
   return Array.from(map.values());
 };
 
-// ───────────────────────── Pilpres × Sekolah × Militer (cross-domain) ─────────────────────────
-
-export type PrabowoKabRow = {
-  kab_norm: string;
-  nama_kab: string;
-  nama_prov: string;
-  // 2024
-  votes24_anies: number;
-  votes24_prabowo: number;
-  votes24_ganjar: number;
-  total24: number;
-  pct24_prabowo: number;
-  tps_coverage_pct: number;
-  // 2019
-  votes19_jokowi: number;
-  votes19_prabowo: number;
-  total19: number;
-  pct19_prabowo: number;
-  swing_pp: number;          // pct24_prabowo - pct19_prabowo (positive = gain)
-  // School + Kodim joined
-  n_sekolah: number;
-  n_akr_a: number;
-  pct_akr_a: number;
-  n_kodim: number;
-};
-
-// All kabupaten with school + pilpres + kodim metrics. Filter happens client-side.
-export const prabowoKabSummary = unstable_cache(
-  async (): Promise<PrabowoKabRow[]> => {
-    const rows = await qAll<any>(`
-      SELECT
-        p.kab_norm, p.nama_kab, p.nama_prov,
-        p.sum24_anies AS votes24_anies, p.sum24_prabowo AS votes24_prabowo, p.sum24_ganjar AS votes24_ganjar,
-        p.sum19_jokowi AS votes19_jokowi, p.sum19_prabowo AS votes19_prabowo,
-        p.sum24_tps_total, p.sum24_tps_covered,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = p.kab_norm) AS n_sekolah,
-        (SELECT COUNT(*) FROM fact_satpen_dikmen s WHERE s.kab_norm = p.kab_norm AND s.akreditasi='A') AS n_akr_a,
-        (SELECT COUNT(*) FROM dim_kodim k WHERE k.kabupaten_norm = p.kab_norm) AS n_kodim
-      FROM v_pilpres_kab p
-    `);
-    return rows
-      .map(r => {
-        const total24 = r.votes24_anies + r.votes24_prabowo + r.votes24_ganjar;
-        const total19 = r.votes19_jokowi + r.votes19_prabowo;
-        const pct24_prabowo = total24 > 0 ? (r.votes24_prabowo / total24) * 100 : 0;
-        const pct19_prabowo = total19 > 0 ? (r.votes19_prabowo / total19) * 100 : 0;
-        const tps_coverage_pct = r.sum24_tps_total > 0 ? (r.sum24_tps_covered / r.sum24_tps_total) * 100 : 0;
-        return {
-          kab_norm: r.kab_norm,
-          nama_kab: r.nama_kab,
-          nama_prov: r.nama_prov,
-          votes24_anies: r.votes24_anies, votes24_prabowo: r.votes24_prabowo, votes24_ganjar: r.votes24_ganjar,
-          total24, pct24_prabowo,
-          tps_coverage_pct,
-          votes19_jokowi: r.votes19_jokowi, votes19_prabowo: r.votes19_prabowo,
-          total19, pct19_prabowo,
-          swing_pp: pct24_prabowo - pct19_prabowo,
-          n_sekolah: r.n_sekolah,
-          n_akr_a: r.n_akr_a,
-          pct_akr_a: r.n_sekolah > 0 ? (r.n_akr_a / r.n_sekolah) * 100 : 0,
-          n_kodim: r.n_kodim,
-        };
-      })
-      // drop kab with no coverage at all (no schools AND no pilpres data)
-      .filter(r => r.total24 > 0);
-  },
-  ["prabowo-kab-summary-v1"],
-  { revalidate: 3600 }
-);
-
-export type KodamPolitikRow = {
-  kodam_id: string;
-  kodam_name: string;
-  n_sekolah: number;
-  votes24_anies: number;
-  votes24_prabowo: number;
-  votes24_ganjar: number;
-  total24: number;
-  pct24_prabowo: number;
-  votes19_prabowo: number;
-  votes19_jokowi: number;
-  pct19_prabowo: number;
-  swing_pp: number;
-};
-
-// Roll pilpres data up to KODAM scope (sum all kab that this kodam covers).
-export const kodamPolitikSummary = unstable_cache(
-  async (): Promise<KodamPolitikRow[]> => {
-    const rows = await qAll<any>(`
-      SELECT
-        kd.kodam_id, kd.name AS kodam_name,
-        SUM(COALESCE(p.sum24_anies, 0))   AS sum24_anies,
-        SUM(COALESCE(p.sum24_prabowo, 0)) AS sum24_prabowo,
-        SUM(COALESCE(p.sum24_ganjar, 0))  AS sum24_ganjar,
-        SUM(COALESCE(p.sum19_jokowi, 0))  AS sum19_jokowi,
-        SUM(COALESCE(p.sum19_prabowo, 0)) AS sum19_prabowo,
-        (SELECT COUNT(*) FROM vw_satpen_with_kodim s WHERE s.kodam_id = kd.kodam_id) AS n_sekolah
-      FROM dim_kodam kd
-      LEFT JOIN dim_kodim k ON k.kodam_id = kd.kodam_id
-      LEFT JOIN v_pilpres_kab p ON p.kab_norm = k.kabupaten_norm
-      GROUP BY kd.kodam_id, kd.name
-    `);
-    return rows.map(r => {
-      const total24 = r.sum24_anies + r.sum24_prabowo + r.sum24_ganjar;
-      const total19 = r.sum19_jokowi + r.sum19_prabowo;
-      const pct24_prabowo = total24 > 0 ? (r.sum24_prabowo / total24) * 100 : 0;
-      const pct19_prabowo = total19 > 0 ? (r.sum19_prabowo / total19) * 100 : 0;
-      return {
-        kodam_id: r.kodam_id,
-        kodam_name: r.kodam_name,
-        n_sekolah: r.n_sekolah,
-        votes24_anies: r.sum24_anies,
-        votes24_prabowo: r.sum24_prabowo,
-        votes24_ganjar: r.sum24_ganjar,
-        total24, pct24_prabowo,
-        votes19_prabowo: r.sum19_prabowo,
-        votes19_jokowi: r.sum19_jokowi,
-        pct19_prabowo,
-        swing_pp: pct24_prabowo - pct19_prabowo,
-      };
-    });
-  },
-  ["kodam-politik-v1"],
-  { revalidate: 3600 }
-);
-
 // Per-kodim Prabowo dominance (for /assignment map color overlay).
 export type KodimPolitikRow = {
   kodim_id: string;
@@ -714,220 +565,6 @@ export const kodimPolitik = unstable_cache(
     });
   },
   ["kodim-politik-v1"],
-  { revalidate: 3600 }
-);
-
-// SK timeline (Pendirian) bucketed by Prabowo dominance (≥60 / 40-60 / <40 of 2024 vote).
-export type SkTimelinePolitikRow = {
-  year: number;
-  dominant: number;   // sekolah at kab where Prabowo ≥ 60%
-  swing: number;      // 40-60%
-  opposisi: number;   // < 40%
-};
-
-export const skTimelineByPrabowo = unstable_cache(
-  async (): Promise<SkTimelinePolitikRow[]> => {
-    const SK_MIN_YEAR = 1945, SK_MAX_YEAR = 2026;
-    const rows = await qAll<any>(`
-      WITH kab_prabowo AS (
-        SELECT kab_norm,
-          (sum24_anies + sum24_prabowo + sum24_ganjar) AS total24,
-          1.0 * sum24_prabowo / NULLIF(sum24_anies + sum24_prabowo + sum24_ganjar, 0) * 100 AS pct
-        FROM v_pilpres_kab
-      )
-      SELECT
-        CAST(strftime('%Y', s.tgl_sk_pendirian) AS INTEGER) AS year,
-        CASE
-          WHEN kp.pct >= 60 THEN 'dominant'
-          WHEN kp.pct >= 40 THEN 'swing'
-          WHEN kp.pct IS NOT NULL THEN 'opposisi'
-          ELSE 'unknown'
-        END AS bucket,
-        COUNT(*) AS n
-      FROM fact_satpen_dikmen s
-      LEFT JOIN kab_prabowo kp ON kp.kab_norm = s.kab_norm
-      WHERE s.tgl_sk_pendirian IS NOT NULL AND s.tgl_sk_pendirian != ''
-      GROUP BY year, bucket
-      HAVING year BETWEEN ? AND ?
-    `, SK_MIN_YEAR, SK_MAX_YEAR);
-
-    const map = new Map<number, SkTimelinePolitikRow>();
-    for (let y = SK_MIN_YEAR; y <= SK_MAX_YEAR; y++) {
-      map.set(y, { year: y, dominant: 0, swing: 0, opposisi: 0 });
-    }
-    rows.forEach(r => {
-      const e = map.get(r.year);
-      if (!e || r.bucket === "unknown") return;
-      (e as any)[r.bucket] = r.n;
-    });
-    return Array.from(map.values());
-  },
-  ["sk-timeline-prabowo-v1"],
-  { revalidate: 3600 }
-);
-
-// ───────────────────────── Map data ─────────────────────────
-
-export type MapSchoolPoint = {
-  npsn: string; nama: string; bentuk: string; status: string; akr: string;
-  lat: number; lng: number;
-};
-export type MapMilitaryPoint = {
-  id: string; tipe: "KODAM" | "KOREM" | "KODIM";
-  name: string; address: string | null; lat: number; lng: number;
-};
-
-// Per-request memo (React.cache) since payloads exceed Next.js 2MB cache limit.
-export const mapSchools = cache(async (): Promise<MapSchoolPoint[]> => {
-  return qAll<MapSchoolPoint>(`
-    SELECT npsn, nama, bentuk_pendidikan AS bentuk,
-           UPPER(status_sekolah) AS status,
-           COALESCE(akreditasi, 'BT') AS akr,
-           lintang AS lat, bujur AS lng
-    FROM fact_satpen_dikmen
-    WHERE lintang IS NOT NULL AND bujur IS NOT NULL
-      AND lintang BETWEEN -12 AND 7 AND bujur BETWEEN 94 AND 142
-  `);
-});
-
-export const mapMilitary = cache(async (): Promise<MapMilitaryPoint[]> => {
-  const [kodam, korem, kodim] = await Promise.all([
-    qAll<any>(`SELECT kodam_id AS id, name, address, lat, lng FROM dim_kodam WHERE lat IS NOT NULL`),
-    qAll<any>(`SELECT korem_id AS id, name, address, lat, lng FROM dim_korem WHERE lat IS NOT NULL AND is_berdiri_sendiri = 0`),
-    qAll<any>(`SELECT kodim_id AS id, name, address, lat, lng FROM dim_kodim WHERE lat IS NOT NULL`),
-  ]);
-  return [
-    ...kodam.map(r => ({ ...r, tipe: "KODAM" as const })),
-    ...korem.map(r => ({ ...r, tipe: "KOREM" as const })),
-    ...kodim.map(r => ({ ...r, tipe: "KODIM" as const })),
-  ];
-});
-
-// ───────────────────────── Koramil aggregates ─────────────────────────
-
-export type KoramilStatsPerKodam = {
-  kodam_id: string;
-  kodam_name: string;
-  n_koramils: number;
-  n_kodims: number;
-  n_schools: number;
-  avg_schools_per_koramil: number;
-};
-
-export const koramilStatsPerKodam = unstable_cache(
-  async (): Promise<KoramilStatsPerKodam[]> => qAll<KoramilStatsPerKodam>(`
-    WITH school_count AS (
-      SELECT k.kodam_id, COUNT(*) AS n_schools
-      FROM dim_kodim k JOIN fact_satpen_dikmen s ON s.kab_norm = k.kabupaten_norm
-      WHERE s.bentuk_pendidikan IN ('SMA','SMK','MA','MAK')
-      GROUP BY k.kodam_id
-    ),
-    kodim_count AS (
-      SELECT kodam_id, COUNT(*) AS n_kodims FROM dim_kodim GROUP BY kodam_id
-    )
-    SELECT ka.kodam_id, ka.name AS kodam_name,
-           COUNT(km.koramil_id) AS n_koramils,
-           COALESCE(kc.n_kodims, 0) AS n_kodims,
-           COALESCE(sc.n_schools, 0) AS n_schools,
-           ROUND(CAST(COALESCE(sc.n_schools, 0) AS REAL) / NULLIF(COUNT(km.koramil_id), 0), 1) AS avg_schools_per_koramil
-    FROM dim_kodam ka
-    LEFT JOIN dim_koramil km ON km.kodam_id = ka.kodam_id
-    LEFT JOIN kodim_count kc  ON kc.kodam_id = ka.kodam_id
-    LEFT JOIN school_count sc ON sc.kodam_id = ka.kodam_id
-    GROUP BY ka.kodam_id
-    ORDER BY n_koramils DESC
-  `),
-  ["koramil-stats-per-kodam-v1"],
-  { revalidate: 3600 }
-);
-
-export type KoramilLoadScatter = {
-  kodim_id: string;
-  kodim_name: string;
-  kodam_name: string;
-  n_koramils: number;
-  n_schools: number;
-  schools_per_koramil: number;
-};
-
-export const koramilLoadScatter = unstable_cache(
-  async (): Promise<KoramilLoadScatter[]> => qAll<KoramilLoadScatter>(`
-    WITH school_count AS (
-      SELECT k.kodim_id, COUNT(*) AS n_schools
-      FROM dim_kodim k JOIN fact_satpen_dikmen s ON s.kab_norm = k.kabupaten_norm
-      WHERE s.bentuk_pendidikan IN ('SMA','SMK','MA','MAK')
-      GROUP BY k.kodim_id
-    ),
-    koramil_count AS (
-      SELECT kodim_id, COUNT(*) AS n FROM dim_koramil WHERE kodim_id IS NOT NULL GROUP BY kodim_id
-    )
-    SELECT kd.kodim_id, kd.name AS kodim_name, ka.name AS kodam_name,
-           COALESCE(kc.n, 0) AS n_koramils,
-           COALESCE(sc.n_schools, 0) AS n_schools,
-           ROUND(CAST(COALESCE(sc.n_schools, 0) AS REAL) / NULLIF(COALESCE(kc.n, 0), 0), 1) AS schools_per_koramil
-    FROM dim_kodim kd
-    JOIN dim_kodam ka ON ka.kodam_id = kd.kodam_id
-    LEFT JOIN koramil_count kc ON kc.kodim_id = kd.kodim_id
-    LEFT JOIN school_count sc  ON sc.kodim_id = kd.kodim_id
-    WHERE kc.n IS NOT NULL AND sc.n_schools IS NOT NULL
-  `),
-  ["koramil-load-scatter-v1"],
-  { revalidate: 3600 }
-);
-
-export type KoramilBentuk = { bentuk: string; n: number };
-
-export const koramilBentukDistribution = unstable_cache(
-  async (): Promise<KoramilBentuk[]> => qAll<KoramilBentuk>(`
-    SELECT COALESCE(bentuk_wilayah, '(tidak diisi)') AS bentuk, COUNT(*) AS n
-    FROM dim_koramil GROUP BY bentuk_wilayah ORDER BY n DESC
-  `),
-  ["koramil-bentuk-v1"],
-  { revalidate: 3600 }
-);
-
-export type KoramilTopKorem = {
-  korem_id: string;
-  korem_name: string;
-  n_koramils: number;
-  n_schools: number;
-};
-
-export const koramilByKorem = unstable_cache(
-  async (limit: number = 15): Promise<KoramilTopKorem[]> => qAll<KoramilTopKorem>(
-    `
-    WITH school_count AS (
-      SELECT k.korem_id, COUNT(*) AS n_schools
-      FROM dim_kodim k JOIN fact_satpen_dikmen s ON s.kab_norm = k.kabupaten_norm
-      WHERE s.bentuk_pendidikan IN ('SMA','SMK','MA','MAK') AND k.korem_id IS NOT NULL
-      GROUP BY k.korem_id
-    )
-    SELECT kr.korem_id, kr.name AS korem_name,
-           COUNT(km.koramil_id) AS n_koramils,
-           COALESCE(sc.n_schools, 0) AS n_schools
-    FROM dim_korem kr
-    LEFT JOIN dim_koramil km ON km.korem_id = kr.korem_id
-    LEFT JOIN school_count sc ON sc.korem_id = kr.korem_id
-    GROUP BY kr.korem_id
-    ORDER BY n_koramils DESC LIMIT ?
-    `,
-    Number(limit)
-  ),
-  ["koramil-by-korem-v1"],
-  { revalidate: 3600 }
-);
-
-// Map enrichment: { kodim_id → n_koramils } for badging kodim markers
-export const koramilCountByKodim = unstable_cache(
-  async (): Promise<Record<string, number>> => {
-    const rows = await qAll<{ kodim_id: string; n: number }>(
-      `SELECT kodim_id, COUNT(*) AS n FROM dim_koramil WHERE kodim_id IS NOT NULL GROUP BY kodim_id`
-    );
-    const out: Record<string, number> = {};
-    for (const r of rows) out[r.kodim_id] = Number(r.n);
-    return out;
-  },
-  ["koramil-count-by-kodim-v1"],
   { revalidate: 3600 }
 );
 

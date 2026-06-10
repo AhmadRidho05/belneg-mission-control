@@ -2,12 +2,12 @@
 // No notifications table needed: items are derived directly from source data.
 //
 // Sources:
-//   users        → web accounts with status = 'pending'
-//   kkri_reports → field reports with status = 'submitted' (unreviewed, last 14 days)
-//   kkri_users   → Pembina accounts with is_active = 0 AND approved_at IS NULL
+//   users                        → web accounts with status = 'pending'
+//   kkri_reports                 → field reports with status = 'submitted' (last 14 days)
+//   kkri_users                   → Pembina accounts pending approval
+//   kkri_profile_change_requests → Pembina profile change requests pending review
 //
-// Uses Promise.allSettled so a missing/broken table degrades gracefully
-// (returns empty for that source) instead of crashing the whole endpoint.
+// Uses Promise.allSettled so a broken table degrades gracefully.
 import "server-only";
 import { NextResponse } from "next/server";
 import { qAll } from "../v1/_lib";
@@ -15,7 +15,7 @@ import { qAll } from "../v1/_lib";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export type NotifType = "user_pending" | "report_new" | "pembina_pending";
+export type NotifType = "user_pending" | "report_new" | "pembina_pending" | "profile_change_pending";
 
 export type NotifItem = {
   id: string;
@@ -23,11 +23,26 @@ export type NotifItem = {
   title: string;
   message: string;
   href: string;
-  created_at: string;
+  created_at: string; // always a valid UTC ISO-8601 string (with Z suffix)
 };
 
+// SQLite CURRENT_TIMESTAMP stores "YYYY-MM-DD HH:MM:SS" — no timezone suffix.
+// Without the "Z", JS Date() parses it as LOCAL time, not UTC, causing a 7-8h offset.
+// This helper appends "Z" so the string is unambiguously treated as UTC.
+function toUtcIso(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  // "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SSZ"
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return s.replace(" ", "T") + "Z";
+  // Already has T separator but no zone → append Z
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) return s + "Z";
+  return s; // already has Z or +offset, leave untouched
+}
+
 export async function GET() {
-  const [webUsersResult, reportsResult, pembinasResult] = await Promise.allSettled([
+  const [webUsersResult, reportsResult, pembinasResult, profileChangesResult] =
+    await Promise.allSettled([
+
     // 1. Web MC accounts awaiting approval
     qAll<{ id: string; full_name: string; created_at: string }>(`
       SELECT id, full_name, created_at
@@ -71,6 +86,17 @@ export async function GET() {
       ORDER BY created_at DESC
       LIMIT 30
     `),
+
+    // 4. Pembina profile change requests pending review
+    qAll<{ id: string; full_name: string; change_type: string; created_at: string }>(`
+      SELECT cr.id, u.full_name, cr.change_type, cr.created_at
+      FROM kkri_profile_change_requests cr
+      JOIN kkri_users u ON u.id = cr.user_id
+      WHERE cr.status = 'pending'
+        AND u.deleted_at IS NULL
+      ORDER BY cr.created_at DESC
+      LIMIT 30
+    `),
   ]);
 
   const items: NotifItem[] = [];
@@ -78,13 +104,15 @@ export async function GET() {
   // — Web MC users pending —
   if (webUsersResult.status === "fulfilled") {
     for (const u of webUsersResult.value) {
+      const ts = toUtcIso(u.created_at);
+      if (!ts) continue;
       items.push({
         id: `user_pending_${u.id}`,
         type: "user_pending",
         title: "Akun baru menunggu approval",
         message: `${u.full_name} mendaftar dan menunggu persetujuan admin.`,
         href: "/admin/users",
-        created_at: u.created_at,
+        created_at: ts,
       });
     }
   }
@@ -92,6 +120,8 @@ export async function GET() {
   // — Unreviewed field reports —
   if (reportsResult.status === "fulfilled") {
     for (const r of reportsResult.value) {
+      const ts = toUtcIso(r.submitted_at);
+      if (!ts) continue; // skip reports with no timestamp rather than faking "now"
       const who = r.user_full_name ?? "Pembina";
       const where = r.sekolah_nama ?? (r.sekolah_npsn ? `NPSN ${r.sekolah_npsn}` : "sekolah");
       const jenis = r.jenis_kegiatan ? ` · ${r.jenis_kegiatan}` : "";
@@ -101,7 +131,7 @@ export async function GET() {
         title: "Laporan baru masuk",
         message: `${who}${jenis} di ${where}.`,
         href: "/admin/reports",
-        created_at: r.submitted_at ?? new Date().toISOString(),
+        created_at: ts,
       });
     }
   }
@@ -109,18 +139,39 @@ export async function GET() {
   // — Pembina pending approval —
   if (pembinasResult.status === "fulfilled") {
     for (const p of pembinasResult.value) {
+      const ts = toUtcIso(p.created_at);
+      if (!ts) continue;
       items.push({
         id: `pembina_pending_${p.id}`,
         type: "pembina_pending",
         title: "Pembina baru menunggu approval",
         message: `${p.full_name} mendaftar via aplikasi mobile.`,
         href: "/admin/pembina",
-        created_at: p.created_at,
+        created_at: ts,
       });
     }
   }
 
-  // Newest first
+  // — Pembina profile change requests —
+  if (profileChangesResult.status === "fulfilled") {
+    for (const cr of profileChangesResult.value) {
+      const ts = toUtcIso(cr.created_at);
+      if (!ts) continue;
+      const changeLabel = cr.change_type === "pangkat" ? "kenaikan pangkat"
+        : cr.change_type === "sekolah" ? "pindah sekolah binaan"
+        : "perubahan pangkat & sekolah";
+      items.push({
+        id: `profile_change_${cr.id}`,
+        type: "profile_change_pending",
+        title: "Pengajuan perubahan profil",
+        message: `${cr.full_name} mengajukan ${changeLabel}.`,
+        href: "/admin/pembina",
+        created_at: ts,
+      });
+    }
+  }
+
+  // Sort newest first (ISO strings with Z sort correctly lexicographically)
   items.sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   return NextResponse.json({ ok: true, count: items.length, items });

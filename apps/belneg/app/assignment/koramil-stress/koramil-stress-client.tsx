@@ -4,23 +4,21 @@ import { useState, useMemo } from "react";
 import { Search, Flame, Map as MapIcon } from "lucide-react";
 import Link from "next/link";
 
-export default function KoramilStressClient({ stats, perKoramil, perKodam, byBentuk }: {
-  stats: any; perKoramil: any[]; perKodam: any[]; byBentuk: any[];
+export default function KoramilStressClient({ stats, perKoramil, perKodam }: {
+  stats: any; perKoramil: any[]; perKodam: any[];
 }) {
   const [q, setQ] = useState("");
   const [kodamFilter, setKodamFilter] = useState("");
-  const [bentukFilter, setBentukFilter] = useState("");
 
   const filtered = useMemo(() => {
     let r = perKoramil;
     if (kodamFilter) r = r.filter(k => k.kodam_name === kodamFilter);
-    if (bentukFilter) r = r.filter(k => (k.bentuk_wilayah || "") === bentukFilter || (bentukFilter === "(unset)" && !k.bentuk_wilayah));
     if (q) {
       const lq = q.toLowerCase();
-      r = r.filter(k => (k.koramil_name + " " + (k.danramil_name || "") + " " + (k.kodim_name || "")).toLowerCase().includes(lq));
+      r = r.filter(k => (k.koramil_name + " " + k.kode_kodim + " " + (k.kodam_name || "")).toLowerCase().includes(lq));
     }
     return r;
-  }, [perKoramil, kodamFilter, bentukFilter, q]);
+  }, [perKoramil, kodamFilter, q]);
 
   // Histogram buckets 0-10, 10-20, ..., 90-100
   const buckets = useMemo(() => {
@@ -34,8 +32,12 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
   }, [perKoramil]);
   const bucketMax = Math.max(...buckets, 1);
 
+  const critCount = useMemo(() => perKoramil.filter(k => (k.stress_index ?? 0) >= 70).length, [perKoramil]);
+  const midCount  = useMemo(() => perKoramil.filter(k => { const v = k.stress_index ?? 0; return v >= 40 && v < 70; }).length, [perKoramil]);
+  const lowCount  = useMemo(() => perKoramil.filter(k => (k.stress_index ?? 0) < 40).length, [perKoramil]);
+
   const top10 = filtered.slice(0, 10);
-  const distinctKodams = useMemo(() => Array.from(new Set(perKoramil.map(k => k.kodam_name))).sort(), [perKoramil]);
+  const distinctKodams = useMemo(() => Array.from(new Set(perKoramil.map(k => k.kodam_name).filter(Boolean))).sort() as string[], [perKoramil]);
 
   return (
     <div className="px-5 py-6 space-y-6 max-w-7xl mx-auto">
@@ -55,19 +57,20 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
         <Kpi label="Total Koramil"  value={stats.total_koramil} />
         <Kpi label="Distinct Kodim" value={stats.distinct_kodim} />
         <Kpi label="Distinct Kodam" value={stats.distinct_kodam} />
-        <Kpi label="With Address"   value={`${Math.round(stats.with_address / stats.total_koramil * 100)}%`} sub={`${stats.with_address}/${stats.total_koramil}`} />
-        <Kpi label="With Phone"     value={`${Math.round(stats.with_phone   / stats.total_koramil * 100)}%`} sub={`${stats.with_phone}/${stats.total_koramil}`} />
+        <Kpi label="Crit (≥70)"    value={critCount} sub={`${stats.total_koramil > 0 ? Math.round(critCount / stats.total_koramil * 100) : 0}%`} />
+        <Kpi label="Low (<40)"     value={lowCount}  sub={`${stats.total_koramil > 0 ? Math.round(lowCount  / stats.total_koramil * 100) : 0}%`} />
       </div>
 
       {/* Formula explainer */}
       <details className="rounded-lg border border-white/8 bg-[#0a1325]/60 p-4">
         <summary className="cursor-pointer text-xs font-semibold text-ink-muted hover:text-amber-300">▾ Bagaimana Stress Index dihitung?</summary>
         <div className="mt-3 space-y-2 text-xs text-ink-muted">
-          <p><span className="text-amber-300 font-mono">stress = 0.6 × load + 0.3 × ops_gap + 0.1 × wilayah</span></p>
+          <p><span className="text-amber-300 font-mono">load = sekolah_di_kodim ÷ koramil_di_kodim</span></p>
+          <p><span className="text-amber-300 font-mono">stress_index = normalized(load) × 100</span></p>
           <ul className="list-disc list-inside space-y-1 ml-2">
-            <li><strong className="text-ink">Load (60%)</strong> — jumlah SMA/SMK/MA/MAK di kabupaten Kodim induk ÷ jumlah koramil sekabupaten, dinormalisasi 0–100 lintas Indonesia. Koramil di daerah dengan banyak sekolah dan sedikit koramil tetangga = tinggi.</li>
-            <li><strong className="text-ink">Ops gap (30%)</strong> — % field operasional (alamat, HP, nama Danramil, pangkat) yang kosong. Koramil dengan data tidak lengkap = lebih sulit dimobilisasi.</li>
-            <li><strong className="text-ink">Wilayah (10%)</strong> — KR* (remote) +20 · KM (kota) 0 · lainnya 10.</li>
+            <li><strong className="text-ink">Load</strong> — jumlah sekolah target di kodim dibagi jumlah koramil di kodim yang sama. Semua koramil dalam satu kodim berbagi beban yang sama.</li>
+            <li><strong className="text-ink">Normalisasi</strong> — load dinormalisasi 0–100 terhadap kodim dengan load tertinggi secara nasional.</li>
+            <li>Threshold: <span className="text-red-400">Crit ≥ 70</span> · <span className="text-amber-300">Mid 40–70</span> · <span className="text-emerald-400">Low &lt; 40</span></li>
           </ul>
         </div>
       </details>
@@ -104,7 +107,7 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
               </thead>
               <tbody>
                 {perKodam.map(k => (
-                  <tr key={k.kodam_id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                  <tr key={k.kodam_name} className="border-t border-white/5 hover:bg-white/[0.02]">
                     <td className="px-3 py-1.5 text-ink-muted truncate max-w-[240px]" title={k.kodam_name}>{k.kodam_name}</td>
                     <td className="px-3 py-1.5 text-right text-ink">{k.n_koramils}</td>
                     <td className="px-3 py-1.5 text-right font-mono text-amber-300">{k.avg_schools_per_koramil}</td>
@@ -128,9 +131,9 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
               </thead>
               <tbody>
                 {top10.map(k => (
-                  <tr key={k.koramil_id} className="border-t border-white/5 hover:bg-white/[0.02]">
-                    <td className="px-3 py-1.5 text-ink-muted truncate max-w-[200px]" title={k.koramil_name + " · " + k.kodim_name}>
-                      {k.koramil_name}<div className="text-[10px] text-ink-subtle truncate">{k.kodim_name}</div>
+                  <tr key={`${k.kode_kodim}_${k.koramil_name}`} className="border-t border-white/5 hover:bg-white/[0.02]">
+                    <td className="px-3 py-1.5 text-ink-muted truncate max-w-[200px]" title={`${k.koramil_name} · ${k.kode_kodim}`}>
+                      {k.koramil_name}<div className="text-[10px] text-ink-subtle truncate">{k.kode_kodim}</div>
                     </td>
                     <td className="px-3 py-1.5 text-right text-ink">{k.schools_per_koramil}</td>
                     <td className="px-3 py-1.5 text-right font-mono"><StressBadge v={k.stress_index} /></td>
@@ -149,18 +152,13 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
           <div className="relative flex-1 min-w-[240px]">
             <Search size={14} className="absolute left-2.5 top-2.5 text-ink-subtle" />
             <input value={q} onChange={e => setQ(e.target.value)}
-              placeholder="Cari nama koramil / danramil / kodim"
+              placeholder="Cari nama koramil / kode kodim / kodam"
               className="w-full pl-8 pr-3 py-2 text-xs bg-white/[0.02] border border-white/10 rounded text-ink placeholder:text-ink-subtle" />
           </div>
           <select value={kodamFilter} onChange={e => setKodamFilter(e.target.value)}
             className="text-xs bg-white/[0.02] border border-white/10 rounded px-2 py-2 text-ink">
             <option value="">Semua Kodam</option>
             {distinctKodams.map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
-          <select value={bentukFilter} onChange={e => setBentukFilter(e.target.value)}
-            className="text-xs bg-white/[0.02] border border-white/10 rounded px-2 py-2 text-ink">
-            <option value="">Semua Bentuk</option>
-            {byBentuk.map(b => <option key={b.bentuk} value={b.bentuk}>{b.bentuk} ({b.n})</option>)}
           </select>
         </div>
 
@@ -171,20 +169,18 @@ export default function KoramilStressClient({ stats, perKoramil, perKodam, byBen
                 <th className="text-left px-3 py-2">Koramil</th>
                 <th className="text-left px-3 py-2">Kodim</th>
                 <th className="text-left px-3 py-2">Kodam</th>
-                <th className="text-left px-3 py-2">Danramil</th>
-                <th className="px-3 py-2">Pangkat</th>
-                <th className="text-right px-3 py-2">SMA/K/Koramil</th>
+                <th className="text-left px-3 py-2">Kab/Kota</th>
+                <th className="text-right px-3 py-2">Sekolah/Koramil</th>
                 <th className="text-right px-3 py-2">Stress</th>
               </tr>
             </thead>
             <tbody>
               {filtered.slice(0, 200).map(k => (
-                <tr key={k.koramil_id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                <tr key={`${k.kode_kodim}_${k.koramil_name}`} className="border-t border-white/5 hover:bg-white/[0.02]">
                   <td className="px-3 py-1.5 text-ink-muted truncate max-w-[200px]" title={k.koramil_name}>{k.koramil_name}</td>
-                  <td className="px-3 py-1.5 text-ink-subtle truncate max-w-[180px]" title={k.kodim_name}>{k.kodim_name}</td>
+                  <td className="px-3 py-1.5 text-ink-subtle">{k.kode_kodim}</td>
                   <td className="px-3 py-1.5 text-ink-subtle truncate max-w-[180px]" title={k.kodam_name}>{k.kodam_name}</td>
-                  <td className="px-3 py-1.5 text-ink-subtle truncate max-w-[160px]" title={k.danramil_name || ""}>{k.danramil_name || "—"}</td>
-                  <td className="px-3 py-1.5 text-center text-ink-subtle">{k.pangkat || "—"}</td>
+                  <td className="px-3 py-1.5 text-ink-subtle truncate max-w-[160px]" title={k.kab_kota}>{k.kab_kota || "—"}</td>
                   <td className="px-3 py-1.5 text-right text-ink">{k.schools_per_koramil}</td>
                   <td className="px-3 py-1.5 text-right font-mono"><StressBadge v={k.stress_index} /></td>
                 </tr>

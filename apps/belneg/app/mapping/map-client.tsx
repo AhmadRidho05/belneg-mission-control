@@ -1,6 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
-import type { MapSchoolPoint, MapMilitaryPoint } from "@/lib/db";
+import type { MapTargetSchoolPoint } from "./cluster-layer";
+import type { TargetKodamAgg } from "@/lib/db";
 
 const MapView = dynamic(() => import("./map-view"), {
   ssr: false,
@@ -11,6 +12,6 @@ const MapView = dynamic(() => import("./map-view"), {
   ),
 });
 
-export default function MapClient(props: { schools: MapSchoolPoint[]; military: MapMilitaryPoint[]; koramilByKodim: Record<string, number> }) {
+export default function MapClient(props: { schools: MapTargetSchoolPoint[]; kodamAgg: TargetKodamAgg[] }) {
   return <MapView {...props} />;
 }

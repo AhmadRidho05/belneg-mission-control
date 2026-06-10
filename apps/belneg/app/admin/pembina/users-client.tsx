@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { CheckCircle2, XCircle, Clock, Mail, Phone, Shield, Search, Plus, ChevronRight, Trash2, Users as UsersIcon } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Mail, Phone, Shield, Search, Plus, ChevronRight, Trash2, Users as UsersIcon, FileText, RefreshCw } from "lucide-react";
 import { fmt } from "@/lib/utils";
 import { AdminSummary } from "./admin-summary";
 import type { AdminStats } from "./admin-stats";
@@ -29,11 +29,20 @@ function bucketOf(u: User): PembinaBucket {
   return u.approved_at ? "rejected" : "pending";
 }
 
+type MainTab = "pembina" | "pengajuan";
+
+function extractPangkat(fullName: string): string {
+  if (!fullName) return "—";
+  const m = fullName.match(/^(Kapten|Mayor|Letkol|Kolonel|Brigjen|Mayjen|Letjen|Jenderal)/i);
+  return m ? m[1] : "—";
+}
+
 export default function UsersClient({ users: initialUsers, units, stats }: { users: User[]; units: Unit[]; stats: AdminStats }) {
   const [users, setUsers] = useState(initialUsers);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [tab, setTab] = useState<MainTab>("pembina");
 
   const filtered = users.filter(u => {
     if (filter !== "all" && bucketOf(u) !== filter) return false;
@@ -111,12 +120,14 @@ export default function UsersClient({ users: initialUsers, units, stats }: { use
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-ink">
             Manage <span className="text-accent-glow">Pembina</span>
           </h1>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[12px] font-semibold text-bg hover:bg-accent-glow transition shadow-glow"
-          >
-            <Plus size={14}/> Tambah Pembina
-          </button>
+          {tab === "pembina" && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[12px] font-semibold text-bg hover:bg-accent-glow transition shadow-glow"
+            >
+              <Plus size={14}/> Tambah Pembina
+            </button>
+          )}
         </div>
         <p className="text-[13px] text-ink-muted">
           Approval untuk Pembina KKRI (personel lapangan) yang register lewat aplikasi mobile, atau dibuat manual.
@@ -125,8 +136,22 @@ export default function UsersClient({ users: initialUsers, units, stats }: { use
           Alur: Pembina register → berstatus <em>pending</em> → muncul di sini → admin approve / reject → baru bisa login di APK.
           Klik baris untuk lihat detail (riwayat GPS, laporan, sekolah binaan).
         </p>
+        {/* Tab switcher */}
+        <div className="flex gap-1 pt-1">
+          <button onClick={() => setTab("pembina")}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] uppercase tracking-widest font-semibold transition ${tab === "pembina" ? "bg-accent text-bg" : "bg-white/5 text-ink-muted hover:bg-white/10"}`}>
+            <UsersIcon size={11}/> Daftar Pembina
+          </button>
+          <button onClick={() => setTab("pengajuan")}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] uppercase tracking-widest font-semibold transition ${tab === "pengajuan" ? "bg-accent text-bg" : "bg-white/5 text-ink-muted hover:bg-white/10"}`}>
+            <FileText size={11}/> Pengajuan Profil
+          </button>
+        </div>
       </header>
 
+      {tab === "pengajuan" && <PengajuanTab />}
+
+      {tab === "pembina" && <>
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard icon={UsersIcon} label="Total Pembina" value={counts.all} accent="ink" />
@@ -187,6 +212,7 @@ export default function UsersClient({ users: initialUsers, units, stats }: { use
 
       {/* Deeper analytics — collapsed by default, only meaningful once there's real activity data */}
       <AdminSummary stats={stats} />
+      </>}
 
       {showCreate && (
         <CreateUserModal units={units} onClose={() => setShowCreate(false)} onCreated={onCreated} />
@@ -194,6 +220,162 @@ export default function UsersClient({ users: initialUsers, units, stats }: { use
     </div>
   );
 }
+
+// ─── Pengajuan Tab ────────────────────────────────────────────────────────────
+
+type ChangeRequest = {
+  id: string; user_id: string; change_type: string; created_at: string;
+  current_pangkat: string | null; requested_pangkat: string | null;
+  current_sekolah_npsn: string | null; current_sekolah_nama: string | null;
+  requested_sekolah_npsn: string | null; requested_sekolah_nama: string | null;
+  full_name: string; phone: string | null; nrp: string | null;
+};
+
+function PengajuanTab() {
+  const [requests, setRequests] = useState<ChangeRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [noteModal, setNoteModal] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/web/admin/pembina/change-requests");
+      const data = await res.json() as { requests: ChangeRequest[] };
+      setRequests(data.requests ?? []);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (id: string, action: "approve" | "reject") => {
+    setBusy(id);
+    try {
+      const res = await fetch(`/api/web/admin/pembina/change-requests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) {
+        const d = await res.json() as { error?: string };
+        alert(d.error ?? "Gagal memproses.");
+        return;
+      }
+      setRequests(prev => prev.filter(r => r.id !== id));
+    } finally { setBusy(null); setNoteModal(null); setNote(""); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={load} disabled={loading}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-ink-muted hover:bg-white/10 disabled:opacity-40 transition">
+          <RefreshCw size={11} className={loading ? "animate-spin" : ""}/> Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="panel p-10 text-center text-[12px] text-ink-subtle">Memuat pengajuan…</div>
+      ) : requests.length === 0 ? (
+        <div className="panel p-10 text-center">
+          <div className="text-[13px] font-medium text-ink">Tidak ada pengajuan.</div>
+          <div className="mt-1 text-[12px] text-ink-subtle">Pengajuan perubahan pangkat/sekolah dari Pembina akan muncul di sini.</div>
+        </div>
+      ) : (
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead className="bg-bg-soft/80 text-[10px] uppercase tracking-widest text-ink-subtle">
+                <tr>
+                  <th className="text-left px-3 py-2.5">Pembina</th>
+                  <th className="text-left px-3 py-2.5">Pangkat Saat Ini</th>
+                  <th className="text-left px-3 py-2.5">Pangkat Diajukan</th>
+                  <th className="text-left px-3 py-2.5">Sekolah Saat Ini</th>
+                  <th className="text-left px-3 py-2.5">Sekolah Diajukan</th>
+                  <th className="text-left px-3 py-2.5">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map(cr => (
+                  <tr key={cr.id} className="border-t border-white/5 hover:bg-white/[0.02] align-top">
+                    <td className="px-3 py-2.5">
+                      <Link href={`/admin/pembina/${cr.user_id}`} className="font-medium text-ink hover:text-accent-glow transition">{cr.full_name}</Link>
+                      {cr.phone && <div className="mt-0.5 text-[10px] text-ink-subtle flex items-center gap-1"><Phone size={9}/>{cr.phone}</div>}
+                      {cr.nrp && <div className="mt-0.5 text-[10px] text-ink-subtle font-mono">NRP {cr.nrp}</div>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {(cr.change_type === "pangkat" || cr.change_type === "both")
+                        ? <span className="text-ink-muted">{cr.current_pangkat || "—"}</span>
+                        : <span className="text-ink-subtle text-[10px]">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {(cr.change_type === "pangkat" || cr.change_type === "both")
+                        ? <span className="font-medium text-accent-glow">{cr.requested_pangkat || "—"}</span>
+                        : <span className="text-ink-subtle text-[10px]">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {(cr.change_type === "sekolah" || cr.change_type === "both") ? (
+                        cr.current_sekolah_nama
+                          ? <><div className="text-ink-muted">{cr.current_sekolah_nama}</div><div className="text-[10px] text-ink-subtle">{cr.current_sekolah_npsn}</div></>
+                          : <span className="text-ink-subtle text-[10px]">Belum ada</span>
+                      ) : <span className="text-ink-subtle text-[10px]">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {(cr.change_type === "sekolah" || cr.change_type === "both") ? (
+                        <><div className="font-medium text-accent-glow">{cr.requested_sekolah_nama || cr.requested_sekolah_npsn || "—"}</div>
+                        {cr.requested_sekolah_npsn && <div className="text-[10px] text-ink-subtle font-mono">{cr.requested_sekolah_npsn}</div>}</>
+                      ) : <span className="text-ink-subtle text-[10px]">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        <button onClick={() => setNoteModal({ id: cr.id, action: "approve" })} disabled={busy === cr.id}
+                          className="rounded-md bg-ok px-2 py-1 text-[10px] uppercase tracking-widest font-semibold text-bg hover:bg-ok/90 disabled:opacity-40">
+                          <CheckCircle2 size={10} className="inline mr-1"/>Setujui
+                        </button>
+                        <button onClick={() => setNoteModal({ id: cr.id, action: "reject" })} disabled={busy === cr.id}
+                          className="rounded-md border border-crit/40 bg-crit/10 px-2 py-1 text-[10px] uppercase tracking-widest font-semibold text-crit hover:bg-crit/20 disabled:opacity-40">
+                          <XCircle size={10} className="inline mr-1"/>Tolak
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {noteModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+             onClick={e => { if (e.target === e.currentTarget) { setNoteModal(null); setNote(""); } }}>
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-bg-soft p-5 shadow-2xl">
+            <h2 className="font-display text-lg font-bold text-ink mb-3">
+              {noteModal.action === "approve" ? "Setujui Pengajuan" : "Tolak Pengajuan"}
+            </h2>
+            <label className="stat-label">Catatan (opsional)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+              placeholder="Alasan atau catatan untuk Pembina…"
+              className="mt-1.5 w-full rounded-md border border-white/10 bg-bg/60 px-3 py-2 text-[12px] text-ink placeholder:text-ink-subtle resize-none"/>
+            <div className="mt-4 flex gap-2 justify-end">
+              <button onClick={() => { setNoteModal(null); setNote(""); }}
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-ink-muted hover:bg-white/10">Batal</button>
+              <button
+                onClick={() => act(noteModal.id, noteModal.action)}
+                disabled={busy === noteModal.id}
+                className={`rounded-md px-4 py-2 text-[12px] font-semibold text-bg disabled:opacity-40 transition ${noteModal.action === "approve" ? "bg-ok hover:bg-ok/90" : "bg-crit hover:bg-crit/90"}`}>
+                {busy === noteModal.id ? "…" : noteModal.action === "approve" ? "Konfirmasi Setujui" : "Konfirmasi Tolak"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function SummaryCard({ icon: Icon, label, value, accent }: { icon: any; label: string; value: number; accent: "ink" | "ok" | "warn" | "crit" }) {
   const colorCls = accent === "ok" ? "text-ok" : accent === "warn" ? "text-warn" : accent === "crit" ? "text-crit" : "text-ink";

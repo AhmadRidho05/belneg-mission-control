@@ -61,19 +61,19 @@ export async function POST(req: NextRequest) {
     isNewUser = true;
   }
 
-  await qRun(`UPDATE kkri_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?`, [user.id]);
-
-  // If user is not yet active, return a "needs approval" response without token
+  // Reject pending users before touching last_login_at or issuing any token.
+  // last_login_at must only reflect successful authenticated sessions.
   if (!user.is_active) {
-    return ok({
-      needs_profile: isNewUser,
-      needs_approval: true,
-      user_id: user.id,
-      message: isNewUser
-        ? "Akun berhasil dibuat. Hubungi atasan untuk approval + lengkapi profil."
-        : "Akun belum disetujui oleh admin. Hubungi atasan.",
-    }, { status: 202 });
+    return bad(
+      isNewUser
+        ? "Akun Anda sudah dibuat dan sedang menunggu persetujuan admin."
+        : "Akun Anda masih menunggu persetujuan admin.",
+      403
+    );
   }
+
+  // User is active — record the login and issue token
+  await qRun(`UPDATE kkri_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?`, [user.id]);
 
   // Issue access token
   const token = await signAccessToken({
