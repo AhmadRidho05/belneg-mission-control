@@ -4,6 +4,7 @@ import Script from "next/script";
 import { AppChrome } from "@/components/app-chrome";
 import { THEME_STORAGE_KEY } from "@/components/top-actions";
 import { getWebSession } from "@/lib/server-auth";
+import { Providers } from "./providers";
 
 // Runs before hydration so the saved theme applies on first paint (no flash of
 // the wrong theme). Keep THEME_STORAGE_KEY in sync with components/top-actions.tsx.
@@ -56,12 +57,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-bg focus:shadow-glow focus:font-semibold"
         >
-          Lompat ke konten utama
+          Skip to main content
         </a>
 
-        <div className="min-h-[100dvh] lg:min-h-screen">
-          <AppChrome role={role}>{children}</AppChrome>
-        </div>
+        <Providers>
+          <div className="min-h-[100dvh] lg:min-h-screen">
+            <AppChrome role={role}>{children}</AppChrome>
+          </div>
+        </Providers>
       </body>
     </html>
   );
