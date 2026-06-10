@@ -39,9 +39,11 @@ export async function GET(req: NextRequest) {
     qAll<any>(
       `SELECT u.id, u.full_name, u.email, u.gender, u.school_class,
               u.riasec_top_code, u.primary_career_onet, u.last_active_at,
-              s.nama AS school_nama, s.provinsi,
+              u.is_active, u.created_at, u.school_npsn AS npsn,
+              s.nama AS school_nama, s.kab_kota, s.provinsi,
               o.title AS primary_career_title,
-              (SELECT COUNT(*) FROM siswa_course_progress p WHERE p.user_id = u.id AND p.status = 'selesai') AS courses_completed
+              (SELECT COUNT(*) FROM siswa_course_progress p  WHERE p.user_id = u.id AND p.status = 'selesai') AS courses_completed,
+              (SELECT COUNT(*) FROM siswa_course_progress p2 WHERE p2.user_id = u.id) AS courses_total
        FROM siswa_users u
        LEFT JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
        LEFT JOIN onet_occupations  o ON o.onet_soc_code = u.primary_career_onet

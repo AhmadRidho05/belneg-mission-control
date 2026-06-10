@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ChevronDown, GraduationCap, Sparkles, Users, BarChart3, Search, Loader2, RefreshCw } from "lucide-react";
+import {
+  ChevronDown, GraduationCap, Sparkles, Users, BarChart3, Search, Loader2, RefreshCw,
+  UserCheck, Award, TrendingUp, AlertCircle, Inbox, X,
+} from "lucide-react";
 import {
   DoughnutChart, HBarChart, ProvinsiBarChart, TrendLaporanPesertaChart,
 } from "../users/admin-charts";
+import { fmt, prettyProv } from "@/lib/utils";
 import type { SiswaStats } from "./admin-stats";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -41,6 +45,31 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
       <div className="text-[10px] uppercase tracking-widest text-ink-subtle">{label}</div>
       <div className="text-2xl font-bold text-amber-400 mt-1.5">{typeof value === "number" ? value.toLocaleString("id-ID") : value}</div>
       {sub && <div className="text-[11px] text-ink-subtle mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Top-level stat card — kkri.id-style at-a-glance KPI tile
+// ─────────────────────────────────────────────────────────────────────────
+const STAT_ACCENTS = {
+  amber:   "bg-amber-500/10 text-amber-400",
+  emerald: "bg-emerald-500/10 text-emerald-400",
+  sky:     "bg-sky-500/10 text-sky-400",
+  violet:  "bg-violet-500/10 text-violet-400",
+} as const;
+
+function StatCard({ icon: Icon, label, value, sub, accent = "amber" }: { icon: any; label: string; value: string | number; sub?: string; accent?: keyof typeof STAT_ACCENTS }) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-[#0a1325]/60 p-4 flex items-start gap-3 hover:border-white/15 transition">
+      <div className={`shrink-0 rounded-lg p-2.5 ${STAT_ACCENTS[accent]}`}>
+        <Icon size={18} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] uppercase tracking-widest text-ink-subtle">{label}</div>
+        <div className="text-xl font-bold text-ink mt-0.5 truncate">{value}</div>
+        {sub && <div className="text-[11px] text-ink-subtle mt-0.5 truncate">{sub}</div>}
+      </div>
     </div>
   );
 }
@@ -170,13 +199,6 @@ function HeatmapRiasecProvince({ rows }: { rows: { provinsi: string; R: number; 
 // ─────────────────────────────────────────────────────────────────────────
 // Main client
 // ─────────────────────────────────────────────────────────────────────────
-type ExplorerRow = {
-  id: string; full_name: string; email: string; gender: "L"|"P"|null;
-  school_class: string|null; school_nama: string|null; provinsi: string|null;
-  riasec_top_code: string|null; primary_career_title: string|null;
-  courses_completed: number; last_active_at: string|null;
-};
-
 export default function SiswaClient({ stats }: { stats: SiswaStats }) {
   return (
     <div className="px-5 py-6 space-y-6 max-w-7xl mx-auto">
@@ -184,11 +206,20 @@ export default function SiswaClient({ stats }: { stats: SiswaStats }) {
         <GraduationCap className="text-amber-400" size={26} />
         <div>
           <h1 className="text-xl font-bold text-ink">Siswa KKRI</h1>
-          <p className="text-[11px] text-ink-subtle uppercase tracking-widest">Pencari Arah · Mission Control</p>
+          <p className="text-[11px] text-ink-subtle uppercase tracking-widest">Pencari Arah · Manajemen Akun Siswa</p>
         </div>
       </header>
 
-      <Accordion icon={BarChart3} title="Key Statistics" subtitle={`${stats.hero.total_users.toLocaleString("id-ID")} total siswa`} defaultOpen>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard icon={Users}      label="Total Siswa"     value={fmt(stats.hero.total_users)} sub={`+${fmt(stats.hero.new_users_30d)} bulan ini`} />
+        <StatCard icon={UserCheck}  label="Siswa Aktif"     value={fmt(stats.hero.mau)}          sub="Aktif 30 hari terakhir" accent="emerald" />
+        <StatCard icon={Award}      label="Asesmen Selesai" value={fmt(stats.hero.assessments_done)} sub={`${fmt(stats.hero.paths_generated)} learning path dibuat`} accent="sky" />
+        <StatCard icon={TrendingUp} label="Avg Readiness"   value={`${stats.hero.avg_readiness_score}%`} sub="Selesai ≥1 kursus" accent="violet" />
+      </div>
+
+      <SiswaTable provinsiOptions={stats.geographic.by_provinsi} />
+
+      <Accordion icon={BarChart3} title="Key Statistics" subtitle={`${stats.hero.total_users.toLocaleString("id-ID")} total siswa`}>
         <KeyStatistics stats={stats} />
       </Accordion>
 
@@ -198,10 +229,6 @@ export default function SiswaClient({ stats }: { stats: SiswaStats }) {
 
       <Accordion icon={Sparkles} title="AI Recommendations" subtitle="On-demand · ditenagai Claude Sonnet">
         <AiRecommendations />
-      </Accordion>
-
-      <Accordion icon={Users} title="User Explorer" subtitle="Cari, filter, dan drill-down per siswa">
-        <UserExplorer />
       </Accordion>
     </div>
   );
@@ -435,111 +462,291 @@ function AiRecommendations() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Accordion 4 — User Explorer
+// Siswa data shape — normalized for the admin table (kkri.id-ready)
 // ─────────────────────────────────────────────────────────────────────────
-function UserExplorer() {
-  const [rows, setRows] = useState<ExplorerRow[]>([]);
+type RegistrationStatus = "aktif" | "belum_aktif" | "tidak_aktif" | "nonaktif";
+
+type SiswaRow = {
+  id: string;
+  student_name: string;
+  email_or_phone: string;
+  school_name: string | null;
+  npsn: string | null;
+  province: string | null;
+  city: string | null;
+  registration_status: RegistrationStatus;
+  learning_progress: number;
+  registered_at: string | null;
+  gender: "L" | "P" | null;
+  school_class: string | null;
+  riasec_top_code: string | null;
+  primary_career_title: string | null;
+};
+
+function toSiswaRow(r: any): SiswaRow {
+  let registration_status: RegistrationStatus = "belum_aktif";
+  if (!r.is_active) {
+    registration_status = "nonaktif";
+  } else if (r.last_active_at) {
+    const days = (Date.now() - new Date(`${r.last_active_at}Z`).getTime()) / 86400000;
+    registration_status = days <= 30 ? "aktif" : "tidak_aktif";
+  }
+  const completed = Number(r.courses_completed) || 0;
+  const total = Number(r.courses_total) || 0;
+  return {
+    id: r.id,
+    student_name: r.full_name || "Tanpa Nama",
+    email_or_phone: r.email || "—",
+    school_name: r.school_nama ?? null,
+    npsn: r.npsn ?? null,
+    province: r.provinsi ?? null,
+    city: r.kab_kota ?? null,
+    registration_status,
+    learning_progress: total > 0 ? Math.round((completed / total) * 100) : 0,
+    registered_at: r.created_at ?? null,
+    gender: r.gender ?? null,
+    school_class: r.school_class ?? null,
+    riasec_top_code: r.riasec_top_code ?? null,
+    primary_career_title: r.primary_career_title ?? null,
+  };
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+const STATUS_META: Record<RegistrationStatus, { label: string; className: string }> = {
+  aktif:       { label: "Aktif",       className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+  belum_aktif: { label: "Belum Aktif", className: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+  tidak_aktif: { label: "Tidak Aktif", className: "bg-white/5 text-ink-subtle border-white/10" },
+  nonaktif:    { label: "Nonaktif",    className: "bg-red-500/15 text-red-300 border-red-500/30" },
+};
+
+function StatusBadge({ status }: { status: RegistrationStatus }) {
+  const m = STATUS_META[status];
+  return <span className={`inline-block whitespace-nowrap px-2 py-0.5 text-[10px] font-medium rounded-full border ${m.className}`}>{m.label}</span>;
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const v = Math.min(100, Math.max(0, value));
+  return (
+    <div className="flex items-center gap-2 min-w-[100px]">
+      <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+        <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${v}%` }} />
+      </div>
+      <span className="text-[10px] text-ink-subtle tabular-nums w-8 text-right">{v}%</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Loading / error / empty states
+// ─────────────────────────────────────────────────────────────────────────
+function TableSkeleton() {
+  return (
+    <div className="rounded border border-white/8 divide-y divide-white/5 overflow-hidden">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="px-3 py-3 flex items-center gap-4 animate-pulse">
+          <div className="h-3 bg-white/5 rounded w-1/5" />
+          <div className="h-3 bg-white/5 rounded w-1/5" />
+          <div className="h-3 bg-white/5 rounded w-1/6" />
+          <div className="h-3 bg-white/5 rounded w-16" />
+          <div className="h-3 bg-white/5 rounded flex-1" />
+          <div className="h-3 bg-white/5 rounded w-16" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="text-center py-10 space-y-3 rounded border border-red-500/20 bg-red-500/[0.03]">
+      <AlertCircle className="mx-auto text-red-400" size={28} />
+      <div className="text-sm text-ink-muted">Gagal memuat data siswa</div>
+      <div className="text-[11px] text-ink-subtle">{message}</div>
+      <button onClick={onRetry} className="mt-1 px-4 py-1.5 text-xs font-semibold bg-red-500/10 text-red-300 border border-red-500/30 rounded hover:bg-red-500/20 transition">
+        Coba Lagi
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="text-center py-10 space-y-3 rounded border border-white/8 bg-white/[0.01]">
+      <Inbox className="mx-auto text-ink-subtle" size={28} />
+      <div className="text-sm text-ink-muted">Tidak ada siswa yang cocok dengan filter ini</div>
+      <button onClick={onReset} className="mt-1 px-4 py-1.5 text-xs font-semibold bg-white/[0.03] text-ink-muted border border-white/10 rounded hover:border-white/30 transition">
+        Reset Filter
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Daftar Siswa — search, filter, table with loading/error/empty states
+// ─────────────────────────────────────────────────────────────────────────
+function SiswaTable({ provinsiOptions }: { provinsiOptions: { name: string; n: number }[] }) {
+  const [rows, setRows] = useState<SiswaRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [q, setQ]                 = useState("");
   const [provinsiFilter, setPF]   = useState("");
   const [genderFilter, setGF]     = useState("");
   const [classFilter, setCF]      = useState("");
-  const [topCodeFilter, setTCF]   = useState("");
   const [hasPathFilter, setHPF]   = useState("");
   const [offset, setOffset]       = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   const limit = 50;
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     const sp = new URLSearchParams({
       ...(q             ? { q } : {}),
       ...(provinsiFilter? { provinsi: provinsiFilter } : {}),
       ...(genderFilter  ? { gender: genderFilter } : {}),
       ...(classFilter   ? { class: classFilter } : {}),
-      ...(topCodeFilter ? { top_code: topCodeFilter } : {}),
       ...(hasPathFilter ? { has_path: hasPathFilter } : {}),
       limit: String(limit),
       offset: String(offset),
     });
     fetch(`/api/admin/siswa?${sp}`)
-      .then(r => r.json())
-      .then(d => { setRows(d.rows || []); setTotal(d.total || 0); })
-      .finally(() => setLoading(false));
-  }, [q, provinsiFilter, genderFilter, classFilter, topCodeFilter, hasPathFilter, offset]);
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => {
+        if (cancelled) return;
+        setRows((d.rows || []).map(toSiswaRow));
+        setTotal(d.total || 0);
+      })
+      .catch(e => { if (!cancelled) setError(e?.message || "Tidak dapat terhubung ke server"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [q, provinsiFilter, genderFilter, classFilter, hasPathFilter, offset, reloadKey]);
+
+  const resetFilters = () => {
+    setQ(""); setPF(""); setGF(""); setCF(""); setHPF(""); setOffset(0);
+  };
 
   const Chip = ({ value, current, set, label }: { value: string; current: string; set: (v: string) => void; label: string }) => (
     <button
-      onClick={() => set(current === value ? "" : value)}
+      onClick={() => { set(current === value ? "" : value); setOffset(0); }}
       className={`px-2 py-1 text-[11px] rounded border transition ${current === value ? "bg-amber-500/30 border-amber-400 text-amber-200" : "border-white/10 text-ink-muted hover:border-white/30"}`}
     >{label}</button>
   );
 
+  const hasFilters = !!(q || provinsiFilter || genderFilter || classFilter || hasPathFilter);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search size={14} className="absolute left-2.5 top-2.5 text-ink-subtle" />
-          <input value={q} onChange={e => { setQ(e.target.value); setOffset(0); }}
-            placeholder="Cari nama / email / sekolah" className="w-full pl-8 pr-3 py-2 text-xs bg-white/[0.02] border border-white/10 rounded text-ink placeholder:text-ink-subtle" />
+    <section className="rounded-xl border border-white/8 bg-[#0a1325]/60 overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Users size={18} className="text-amber-400" />
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Daftar Siswa</h2>
+            <p className="text-[11px] text-ink-subtle mt-0.5">Cari, filter, dan kelola data siswa terdaftar</p>
+          </div>
         </div>
-        <div className="flex gap-1">
-          <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Gender:</span>
-          <Chip value="L" current={genderFilter} set={setGF} label="L" />
-          <Chip value="P" current={genderFilter} set={setGF} label="P" />
-        </div>
-        <div className="flex gap-1">
-          <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Kelas:</span>
-          {["10","11","12"].map(c => <Chip key={c} value={c} current={classFilter} set={setCF} label={c} />)}
-        </div>
-        <div className="flex gap-1">
-          <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Path:</span>
-          <Chip value="1" current={hasPathFilter} set={setHPF} label="Ada" />
-          <Chip value="0" current={hasPathFilter} set={setHPF} label="Belum" />
+        <div className="text-[11px] text-ink-subtle">
+          {loading ? "Memuat…" : `${fmt(total)} siswa ditemukan`}
         </div>
       </div>
 
-      <div className="text-[11px] text-ink-subtle">
-        {loading ? "Memuat…" : `${total.toLocaleString("id-ID")} siswa cocok · menampilkan ${rows.length} dari offset ${offset}`}
-      </div>
-
-      <div className="overflow-x-auto rounded border border-white/8">
-        <table className="w-full text-xs">
-          <thead className="bg-white/[0.02] text-ink-subtle uppercase text-[10px]">
-            <tr>
-              <th className="text-left px-3 py-2">Nama</th>
-              <th className="text-left px-3 py-2">Sekolah</th>
-              <th className="px-3 py-2">Kelas</th>
-              <th className="px-3 py-2">RIASEC</th>
-              <th className="text-left px-3 py-2">Karier Target</th>
-              <th className="px-3 py-2 text-right">Selesai</th>
-              <th className="text-left px-3 py-2">Last Active</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] cursor-pointer"
-                  onClick={() => window.location.href = `/admin/siswa/${r.id}`}>
-                <td className="px-3 py-2 text-ink">{r.full_name}<div className="text-[10px] text-ink-subtle">{r.email}</div></td>
-                <td className="px-3 py-2 text-ink-muted truncate max-w-[200px]" title={r.school_nama || ""}>{r.school_nama || "-"}<div className="text-[10px] text-ink-subtle">{r.provinsi}</div></td>
-                <td className="px-3 py-2 text-center text-ink-muted">{r.school_class || "-"}</td>
-                <td className="px-3 py-2 text-center font-mono text-amber-400">{r.riasec_top_code || "-"}</td>
-                <td className="px-3 py-2 text-ink-muted truncate max-w-[200px]" title={r.primary_career_title || ""}>{r.primary_career_title || "-"}</td>
-                <td className="px-3 py-2 text-right text-ink-muted">{r.courses_completed}</td>
-                <td className="px-3 py-2 text-ink-subtle text-[10px]">{r.last_active_at ? r.last_active_at.slice(0,10) : "-"}</td>
-              </tr>
+      <div className="p-5 space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search size={14} className="absolute left-2.5 top-2.5 text-ink-subtle" />
+            <input value={q} onChange={e => { setQ(e.target.value); setOffset(0); }}
+              placeholder="Cari nama, email, atau sekolah" className="w-full pl-8 pr-3 py-2 text-xs bg-white/[0.02] border border-white/10 rounded text-ink placeholder:text-ink-subtle" />
+          </div>
+          <select value={provinsiFilter} onChange={e => { setPF(e.target.value); setOffset(0); }}
+            className="px-3 py-2 text-xs bg-white/[0.02] border border-white/10 rounded text-ink-muted">
+            <option value="" className="bg-[#0a1325]">Semua Provinsi</option>
+            {provinsiOptions.map(p => (
+              <option key={p.name} value={p.name} className="bg-[#0a1325]">{prettyProv(p.name)}</option>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </select>
+          <div className="flex gap-1">
+            <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Gender:</span>
+            <Chip value="L" current={genderFilter} set={setGF} label="L" />
+            <Chip value="P" current={genderFilter} set={setGF} label="P" />
+          </div>
+          <div className="flex gap-1">
+            <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Kelas:</span>
+            {["10","11","12"].map(c => <Chip key={c} value={c} current={classFilter} set={setCF} label={c} />)}
+          </div>
+          <div className="flex gap-1">
+            <span className="text-[10px] uppercase text-ink-subtle self-center mr-1">Path:</span>
+            <Chip value="1" current={hasPathFilter} set={setHPF} label="Ada" />
+            <Chip value="0" current={hasPathFilter} set={setHPF} label="Belum" />
+          </div>
+          {hasFilters && (
+            <button onClick={resetFilters} className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-white/10 text-ink-subtle hover:border-white/30 hover:text-ink transition">
+              <X size={12} /> Reset
+            </button>
+          )}
+        </div>
 
-      <div className="flex justify-between items-center">
-        <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}
-          className="px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded disabled:opacity-30">← Prev</button>
-        <span className="text-[11px] text-ink-subtle">Halaman {Math.floor(offset / limit) + 1} / {Math.max(1, Math.ceil(total / limit))}</span>
-        <button disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}
-          className="px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded disabled:opacity-30">Next →</button>
+        {error ? (
+          <ErrorState message={error} onRetry={() => setReloadKey(k => k + 1)} />
+        ) : loading ? (
+          <TableSkeleton />
+        ) : rows.length === 0 ? (
+          <EmptyState onReset={resetFilters} />
+        ) : (
+          <div className="overflow-x-auto rounded border border-white/8">
+            <table className="w-full text-xs">
+              <thead className="bg-white/[0.02] text-ink-subtle uppercase text-[10px]">
+                <tr>
+                  <th className="text-left px-3 py-2">Siswa</th>
+                  <th className="text-left px-3 py-2">Sekolah</th>
+                  <th className="text-left px-3 py-2">Lokasi</th>
+                  <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-3 py-2 text-left">Progress Belajar</th>
+                  <th className="text-left px-3 py-2">Terdaftar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] cursor-pointer"
+                      onClick={() => window.location.href = `/admin/siswa/${r.id}`}>
+                    <td className="px-3 py-2">
+                      <div className="text-ink font-medium">{r.student_name}</div>
+                      <div className="text-[10px] text-ink-subtle">{r.email_or_phone}</div>
+                    </td>
+                    <td className="px-3 py-2 text-ink-muted">
+                      <div className="truncate max-w-[200px]" title={r.school_name || ""}>{r.school_name || "—"}</div>
+                      {r.npsn && <div className="text-[10px] text-ink-subtle">NPSN {r.npsn}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-ink-muted">
+                      <div>{r.city || "—"}</div>
+                      <div className="text-[10px] text-ink-subtle">{prettyProv(r.province)}</div>
+                    </td>
+                    <td className="px-3 py-2 text-center"><StatusBadge status={r.registration_status} /></td>
+                    <td className="px-3 py-2"><ProgressBar value={r.learning_progress} /></td>
+                    <td className="px-3 py-2 text-ink-subtle text-[10px]">{formatDate(r.registered_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!error && (
+          <div className="flex justify-between items-center">
+            <button disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}
+              className="px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded disabled:opacity-30">← Prev</button>
+            <span className="text-[11px] text-ink-subtle">Halaman {Math.floor(offset / limit) + 1} / {Math.max(1, Math.ceil(total / limit))}</span>
+            <button disabled={loading || offset + limit >= total} onClick={() => setOffset(offset + limit)}
+              className="px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded disabled:opacity-30">Next →</button>
+          </div>
+        )}
       </div>
-    </div>
+    </section>
   );
 }
