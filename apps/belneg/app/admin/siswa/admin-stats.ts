@@ -1,278 +1,172 @@
-// Server-side aggregator for the /admin/siswa dashboard. Single Promise.all
-// of all queries to keep page-load fast.
+// Server-side aggregator for the /admin/siswa dashboard — full LMS data.
 import { qAll, qGet } from "../../api/v1/_lib";
 
 export type SiswaStats = {
   hero: {
     total_users: number;
-    new_users_7d: number;
-    new_users_30d: number;
-    new_users_90d: number;
-    dau: number;
-    wau: number;
-    mau: number;
-    m6_active: number;
-    m12_active: number;
-    assessments_done: number;
-    paths_generated: number;
-    courses_started: number;
-    courses_completed: number;
-    avg_readiness_score: number;
+    total_schools: number;
+    active_programs: number;
+    total_courses: number;
+    total_enrollments: number;
+    total_completed: number;
+    completion_rate: number;
+    total_certificates: number;
   };
-  geographic: {
-    by_provinsi: { name: string; n: number }[];
-    by_kab: { name: string; n: number }[];
-    by_school: { npsn: string; nama: string; provinsi: string; n: number }[];
-  };
-  trend: {
-    signup_90d: { date: string; n: number }[];
-    dau_90d: { date: string; n: number }[];
-  };
-  riasec: {
-    avg_per_dim: { R: number; I: number; A: number; S: number; E: number; C: number };
-    top_codes: { code: string; n: number }[];
-    by_gender: { gender: "L" | "P"; R: number; I: number; A: number; S: number; E: number; C: number }[];
-    by_class: { school_class: string; R: number; I: number; A: number; S: number; E: number; C: number }[];
-    by_provinsi: { provinsi: string; R: number; I: number; A: number; S: number; E: number; C: number; n: number }[];
-  };
-  career: {
-    top_primary: { onet_soc_code: string; title: string; n: number }[];
-    top_per_provinsi: { provinsi: string; onet_soc_code: string; title: string; n: number }[];
-    top_per_gender: { gender: string; onet_soc_code: string; title: string; n: number }[];
-    top_per_top_code: { top_code: string; onet_soc_code: string; title: string; n: number }[];
-  };
-  funnel: {
-    signup: number;
-    assessment_done: number;
-    career_picked: number;
-    self_assess_done: number;
-    path_generated: number;
-    first_course_started: number;
-    first_course_completed: number;
-  };
+  users: {
+    id: string;
+    fullname: string;
+    email: string;
+    phone: string | null;
+    isActive: number;
+    createdAt: string | null;
+    n_enrollments: number;
+  }[];
+  organizations: {
+    id: string;
+    name: string;
+    isActive: number;
+    n_courses: number;
+    n_programs: number;
+  }[];
+  programs: {
+    id: string;
+    name: string;
+    programStartDate: string | null;
+    programEndDate: string | null;
+    registrationStartDate: string | null;
+    registrationEndDate: string | null;
+    maxParticipants: number | null;
+    isActive: number;
+    n_pending: number;
+    n_accepted: number;
+    n_rejected: number;
+  }[];
+  enrollment_by_course: {
+    course_id: string;
+    title: string;
+    n_enrolled: number;
+    n_completed: number;
+    total_enrollments: number;
+    completion_rate: number;
+  }[];
 };
 
 export async function getSiswaStats(): Promise<SiswaStats> {
-  const [
-    heroRow, newRow, dauRows,
-    coursesRow,
-    provinsiRows, kabRows, schoolRows,
-    signupTrend, dauTrend,
-    avgDimRow, topCodeRows,
-    byGenderRows, byClassRows, byProvinsiRows,
-    topPrimaryRows, topPerProvinsiRows, topPerGenderRows, topPerTopCodeRows,
-    funnelRows,
-    readinessRow,
-  ] = await Promise.all([
-    qGet<any>(`SELECT COUNT(*) AS total FROM siswa_users WHERE deleted_at IS NULL`),
+  const [heroRow, userRows, orgRows, programRows, courseEnrollRows] = await Promise.all([
     qGet<any>(`
       SELECT
-        SUM(CASE WHEN created_at >= datetime('now','-7 days')   THEN 1 ELSE 0 END) AS n7,
-        SUM(CASE WHEN created_at >= datetime('now','-30 days')  THEN 1 ELSE 0 END) AS n30,
-        SUM(CASE WHEN created_at >= datetime('now','-90 days')  THEN 1 ELSE 0 END) AS n90
-      FROM siswa_users WHERE deleted_at IS NULL`),
-    qAll<{ d: string; n: number }>(`
-      SELECT DATE(created_at) AS d, COUNT(DISTINCT user_id) AS n
-      FROM siswa_activity_log
-      WHERE created_at >= datetime('now','-1 days')
-      GROUP BY DATE(created_at)`),
-    qGet<any>(`
-      SELECT
-        (SELECT COUNT(*) FROM siswa_assessments) AS assessments,
-        (SELECT COUNT(*) FROM siswa_learning_paths) AS paths,
-        (SELECT COUNT(*) FROM siswa_course_progress WHERE started_at IS NOT NULL) AS started,
-        (SELECT COUNT(*) FROM siswa_course_progress WHERE status = 'selesai') AS completed`),
-    qAll<{ name: string; n: number }>(`
-      SELECT s.provinsi AS name, COUNT(*) AS n
-      FROM siswa_users u JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
-      WHERE u.deleted_at IS NULL
-      GROUP BY s.provinsi ORDER BY n DESC LIMIT 38`),
-    qAll<{ name: string; n: number }>(`
-      SELECT s.kab_kota AS name, COUNT(*) AS n
-      FROM siswa_users u JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
-      WHERE u.deleted_at IS NULL
-      GROUP BY s.kab_kota ORDER BY n DESC LIMIT 20`),
-    qAll<{ npsn: string; nama: string; provinsi: string; n: number }>(`
-      SELECT s.npsn, s.nama, s.provinsi, COUNT(*) AS n
-      FROM siswa_users u JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
-      WHERE u.deleted_at IS NULL
-      GROUP BY s.npsn ORDER BY n DESC LIMIT 20`),
-    qAll<{ date: string; n: number }>(`
-      SELECT DATE(created_at) AS date, COUNT(*) AS n
-      FROM siswa_users
-      WHERE deleted_at IS NULL AND created_at >= datetime('now','-90 days')
-      GROUP BY DATE(created_at) ORDER BY date ASC`),
-    qAll<{ date: string; n: number }>(`
-      SELECT DATE(created_at) AS date, COUNT(DISTINCT user_id) AS n
-      FROM siswa_activity_log
-      WHERE created_at >= datetime('now','-90 days')
-      GROUP BY DATE(created_at) ORDER BY date ASC`),
-    qGet<any>(`
-      SELECT
-        ROUND(AVG(riasec_realistic),    1) AS R,
-        ROUND(AVG(riasec_investigative),1) AS I,
-        ROUND(AVG(riasec_artistic),     1) AS A,
-        ROUND(AVG(riasec_social),       1) AS S,
-        ROUND(AVG(riasec_enterprising), 1) AS E,
-        ROUND(AVG(riasec_conventional), 1) AS C
-      FROM siswa_assessments`),
-    qAll<{ code: string; n: number }>(`
-      SELECT top_code AS code, COUNT(*) AS n
-      FROM siswa_assessments
-      WHERE top_code IS NOT NULL
-      GROUP BY top_code ORDER BY n DESC LIMIT 10`),
-    qAll<any>(`
-      SELECT u.gender,
-        ROUND(AVG(a.riasec_realistic),    1) AS R,
-        ROUND(AVG(a.riasec_investigative),1) AS I,
-        ROUND(AVG(a.riasec_artistic),     1) AS A,
-        ROUND(AVG(a.riasec_social),       1) AS S,
-        ROUND(AVG(a.riasec_enterprising), 1) AS E,
-        ROUND(AVG(a.riasec_conventional), 1) AS C
-      FROM siswa_assessments a JOIN siswa_users u ON u.id = a.user_id
-      WHERE u.gender IN ('L','P')
-      GROUP BY u.gender`),
-    qAll<any>(`
-      SELECT u.school_class,
-        ROUND(AVG(a.riasec_realistic),    1) AS R,
-        ROUND(AVG(a.riasec_investigative),1) AS I,
-        ROUND(AVG(a.riasec_artistic),     1) AS A,
-        ROUND(AVG(a.riasec_social),       1) AS S,
-        ROUND(AVG(a.riasec_enterprising), 1) AS E,
-        ROUND(AVG(a.riasec_conventional), 1) AS C
-      FROM siswa_assessments a JOIN siswa_users u ON u.id = a.user_id
-      WHERE u.school_class IN ('10','11','12')
-      GROUP BY u.school_class ORDER BY u.school_class ASC`),
-    qAll<any>(`
-      SELECT s.provinsi,
-        ROUND(AVG(a.riasec_realistic),    1) AS R,
-        ROUND(AVG(a.riasec_investigative),1) AS I,
-        ROUND(AVG(a.riasec_artistic),     1) AS A,
-        ROUND(AVG(a.riasec_social),       1) AS S,
-        ROUND(AVG(a.riasec_enterprising), 1) AS E,
-        ROUND(AVG(a.riasec_conventional), 1) AS C,
-        COUNT(*) AS n
-      FROM siswa_assessments a
-      JOIN siswa_users u ON u.id = a.user_id
-      JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
-      GROUP BY s.provinsi ORDER BY n DESC LIMIT 10`),
-    qAll<{ onet_soc_code: string; title: string; n: number }>(`
-      SELECT u.primary_career_onet AS onet_soc_code, o.title, COUNT(*) AS n
-      FROM siswa_users u
-      JOIN onet_occupations o ON o.onet_soc_code = u.primary_career_onet
-      WHERE u.primary_career_onet IS NOT NULL AND u.deleted_at IS NULL
-      GROUP BY u.primary_career_onet ORDER BY n DESC LIMIT 20`),
-    qAll<any>(`
-      WITH ranked AS (
-        SELECT s.provinsi, u.primary_career_onet, o.title, COUNT(*) AS n,
-               ROW_NUMBER() OVER (PARTITION BY s.provinsi ORDER BY COUNT(*) DESC) AS rn
-        FROM siswa_users u
-        JOIN onet_occupations o ON o.onet_soc_code = u.primary_career_onet
-        JOIN fact_satpen_dikmen s ON s.npsn = u.school_npsn
-        WHERE u.primary_career_onet IS NOT NULL
-        GROUP BY s.provinsi, u.primary_career_onet
-      )
-      SELECT provinsi, primary_career_onet AS onet_soc_code, title, n
-      FROM ranked WHERE rn = 1 ORDER BY n DESC LIMIT 15`),
-    qAll<any>(`
-      WITH ranked AS (
-        SELECT u.gender, u.primary_career_onet, o.title, COUNT(*) AS n,
-               ROW_NUMBER() OVER (PARTITION BY u.gender ORDER BY COUNT(*) DESC) AS rn
-        FROM siswa_users u
-        JOIN onet_occupations o ON o.onet_soc_code = u.primary_career_onet
-        WHERE u.primary_career_onet IS NOT NULL AND u.gender IN ('L','P')
-        GROUP BY u.gender, u.primary_career_onet
-      )
-      SELECT gender, primary_career_onet AS onet_soc_code, title, n
-      FROM ranked WHERE rn <= 3 ORDER BY gender, n DESC`),
-    qAll<any>(`
-      WITH ranked AS (
-        SELECT u.riasec_top_code, u.primary_career_onet, o.title, COUNT(*) AS n,
-               ROW_NUMBER() OVER (PARTITION BY u.riasec_top_code ORDER BY COUNT(*) DESC) AS rn
-        FROM siswa_users u
-        JOIN onet_occupations o ON o.onet_soc_code = u.primary_career_onet
-        WHERE u.primary_career_onet IS NOT NULL AND u.riasec_top_code IS NOT NULL
-        GROUP BY u.riasec_top_code, u.primary_career_onet
-      )
-      SELECT riasec_top_code AS top_code, primary_career_onet AS onet_soc_code, title, n
-      FROM ranked WHERE rn = 1 ORDER BY n DESC LIMIT 15`),
-    qGet<any>(`
-      SELECT
-        (SELECT COUNT(*) FROM siswa_users WHERE deleted_at IS NULL) AS signup,
-        (SELECT COUNT(DISTINCT user_id) FROM siswa_assessments) AS assessment_done,
-        (SELECT COUNT(*) FROM siswa_users WHERE deleted_at IS NULL AND primary_career_onet IS NOT NULL) AS career_picked,
-        (SELECT COUNT(DISTINCT user_id) FROM siswa_self_assessments) AS self_assess_done,
-        (SELECT COUNT(DISTINCT user_id) FROM siswa_learning_paths) AS path_generated,
-        (SELECT COUNT(DISTINCT user_id) FROM siswa_course_progress WHERE started_at IS NOT NULL) AS first_course_started,
-        (SELECT COUNT(DISTINCT user_id) FROM siswa_course_progress WHERE completed_at IS NOT NULL) AS first_course_completed
+        (SELECT COUNT(*) FROM lms_users)                               AS total_users,
+        (SELECT COUNT(*) FROM lms_schools)                             AS total_schools,
+        (SELECT COUNT(*) FROM lms_programs WHERE isActive = 1)         AS active_programs,
+        (SELECT COUNT(*) FROM lms_courses)                             AS total_courses,
+        (SELECT COUNT(*) FROM lms_enrollments)                         AS total_enrollments,
+        (SELECT COUNT(*) FROM lms_enrollments WHERE status = 'COMPLETED') AS total_completed,
+        (SELECT COUNT(*) FROM lms_certificates)                        AS total_certificates
     `),
-    // Naive avg_readiness — simply % of users who have completed at least 1
-    // course as a proxy; the real per-user score is computed in /readiness-score
-    // and aggregating that across 500+ users would mean 500 round-trips.
-    qGet<any>(`
-      SELECT
-        ROUND(100.0 * (
-          SELECT COUNT(DISTINCT user_id) FROM siswa_course_progress WHERE status = 'selesai'
-        ) / NULLIF((SELECT COUNT(*) FROM siswa_users WHERE deleted_at IS NULL), 0), 0) AS pct
+
+    qAll<any>(`
+      SELECT u.id, u.fullname, u.email, u.phone, u.isActive, u.createdAt,
+        COALESCE(
+          (SELECT COUNT(*) FROM lms_enrollments e WHERE e.studentId = u.id), 0
+        ) AS n_enrollments
+      FROM lms_users u
+      ORDER BY u.createdAt DESC
+    `),
+
+    qAll<any>(`
+      SELECT o.id, o.name, o.isActive,
+        COALESCE((SELECT COUNT(*) FROM lms_courses c WHERE c.organizationId = o.id), 0) AS n_courses,
+        COALESCE((SELECT COUNT(*) FROM lms_programs p WHERE p.organizationId = o.id), 0) AS n_programs
+      FROM lms_organizations o
+      ORDER BY n_courses DESC
+    `),
+
+    qAll<any>(`
+      SELECT p.id, p.name, p.programStartDate, p.programEndDate,
+        p.registrationStartDate, p.registrationEndDate, p.maxParticipants, p.isActive,
+        COALESCE(SUM(CASE WHEN pa.status = 'PENDING'  THEN 1 ELSE 0 END), 0) AS n_pending,
+        COALESCE(SUM(CASE WHEN pa.status = 'ACCEPTED' THEN 1 ELSE 0 END), 0) AS n_accepted,
+        COALESCE(SUM(CASE WHEN pa.status = 'REJECTED' THEN 1 ELSE 0 END), 0) AS n_rejected
+      FROM lms_programs p
+      LEFT JOIN lms_program_applications pa ON pa.programId = p.id
+      GROUP BY p.id
+      ORDER BY p.isActive DESC, p.programStartDate ASC
+    `),
+
+    qAll<any>(`
+      SELECT c.id AS course_id, c.title,
+        COALESCE(SUM(CASE WHEN e.status = 'ENROLLED'  THEN 1 ELSE 0 END), 0) AS n_enrolled,
+        COALESCE(SUM(CASE WHEN e.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS n_completed
+      FROM lms_courses c
+      LEFT JOIN lms_enrollments e ON e.courseId = c.id
+      GROUP BY c.id, c.title
+      HAVING n_enrolled + n_completed > 0
+      ORDER BY n_enrolled + n_completed DESC
+      LIMIT 20
     `),
   ]);
 
-  // Active users via single query (DAU/WAU/MAU/M6/M12)
-  const activeRows = await qGet<any>(`
-    SELECT
-      COUNT(DISTINCT CASE WHEN created_at >= datetime('now','-1 days')   THEN user_id END) AS dau,
-      COUNT(DISTINCT CASE WHEN created_at >= datetime('now','-7 days')   THEN user_id END) AS wau,
-      COUNT(DISTINCT CASE WHEN created_at >= datetime('now','-30 days')  THEN user_id END) AS mau,
-      COUNT(DISTINCT CASE WHEN created_at >= datetime('now','-180 days') THEN user_id END) AS m6,
-      COUNT(DISTINCT CASE WHEN created_at >= datetime('now','-365 days') THEN user_id END) AS m12
-    FROM siswa_activity_log
-    WHERE created_at >= datetime('now','-365 days')
-  `);
+  const total_enrollments = Number(heroRow?.total_enrollments ?? 0);
+  const total_completed   = Number(heroRow?.total_completed   ?? 0);
 
   return {
     hero: {
-      total_users:         Number(heroRow?.total ?? 0),
-      new_users_7d:        Number(newRow?.n7 ?? 0),
-      new_users_30d:       Number(newRow?.n30 ?? 0),
-      new_users_90d:       Number(newRow?.n90 ?? 0),
-      dau:                 Number(activeRows?.dau ?? 0),
-      wau:                 Number(activeRows?.wau ?? 0),
-      mau:                 Number(activeRows?.mau ?? 0),
-      m6_active:           Number(activeRows?.m6 ?? 0),
-      m12_active:          Number(activeRows?.m12 ?? 0),
-      assessments_done:    Number(coursesRow?.assessments ?? 0),
-      paths_generated:     Number(coursesRow?.paths ?? 0),
-      courses_started:     Number(coursesRow?.started ?? 0),
-      courses_completed:   Number(coursesRow?.completed ?? 0),
-      avg_readiness_score: Number(readinessRow?.pct ?? 0),
+      total_users:        Number(heroRow?.total_users        ?? 0),
+      total_schools:      Number(heroRow?.total_schools      ?? 0),
+      active_programs:    Number(heroRow?.active_programs    ?? 0),
+      total_courses:      Number(heroRow?.total_courses      ?? 0),
+      total_enrollments,
+      total_completed,
+      completion_rate:    total_enrollments > 0
+        ? Math.round((total_completed / total_enrollments) * 100)
+        : 0,
+      total_certificates: Number(heroRow?.total_certificates ?? 0),
     },
-    geographic: { by_provinsi: provinsiRows, by_kab: kabRows, by_school: schoolRows },
-    trend:      { signup_90d: signupTrend, dau_90d: dauTrend },
-    riasec: {
-      avg_per_dim: {
-        R: Number(avgDimRow?.R ?? 0), I: Number(avgDimRow?.I ?? 0),
-        A: Number(avgDimRow?.A ?? 0), S: Number(avgDimRow?.S ?? 0),
-        E: Number(avgDimRow?.E ?? 0), C: Number(avgDimRow?.C ?? 0),
-      },
-      top_codes:    topCodeRows,
-      by_gender:    byGenderRows,
-      by_class:     byClassRows,
-      by_provinsi:  byProvinsiRows,
-    },
-    career: {
-      top_primary:        topPrimaryRows,
-      top_per_provinsi:   topPerProvinsiRows,
-      top_per_gender:     topPerGenderRows,
-      top_per_top_code:   topPerTopCodeRows,
-    },
-    funnel: {
-      signup:                  Number(funnelRows?.signup ?? 0),
-      assessment_done:         Number(funnelRows?.assessment_done ?? 0),
-      career_picked:           Number(funnelRows?.career_picked ?? 0),
-      self_assess_done:        Number(funnelRows?.self_assess_done ?? 0),
-      path_generated:          Number(funnelRows?.path_generated ?? 0),
-      first_course_started:    Number(funnelRows?.first_course_started ?? 0),
-      first_course_completed:  Number(funnelRows?.first_course_completed ?? 0),
-    },
+
+    users: userRows.map(u => ({
+      id:            String(u.id),
+      fullname:      String(u.fullname  ?? "—"),
+      email:         String(u.email     ?? "—"),
+      phone:         u.phone ? String(u.phone) : null,
+      isActive:      Number(u.isActive  ?? 0),
+      createdAt:     u.createdAt ? String(u.createdAt) : null,
+      n_enrollments: Number(u.n_enrollments ?? 0),
+    })),
+
+    organizations: orgRows.map(o => ({
+      id:         String(o.id),
+      name:       String(o.name    ?? "—"),
+      isActive:   Number(o.isActive ?? 0),
+      n_courses:  Number(o.n_courses  ?? 0),
+      n_programs: Number(o.n_programs ?? 0),
+    })),
+
+    programs: programRows.map(p => ({
+      id:                    String(p.id),
+      name:                  String(p.name ?? "—"),
+      programStartDate:      p.programStartDate      ? String(p.programStartDate)      : null,
+      programEndDate:        p.programEndDate        ? String(p.programEndDate)        : null,
+      registrationStartDate: p.registrationStartDate ? String(p.registrationStartDate) : null,
+      registrationEndDate:   p.registrationEndDate   ? String(p.registrationEndDate)   : null,
+      maxParticipants:       p.maxParticipants != null ? Number(p.maxParticipants) : null,
+      isActive:              Number(p.isActive ?? 0),
+      n_pending:             Number(p.n_pending  ?? 0),
+      n_accepted:            Number(p.n_accepted ?? 0),
+      n_rejected:            Number(p.n_rejected ?? 0),
+    })),
+
+    enrollment_by_course: courseEnrollRows.map(c => {
+      const enrolled  = Number(c.n_enrolled  ?? 0);
+      const completed = Number(c.n_completed ?? 0);
+      const total     = enrolled + completed;
+      return {
+        course_id:         String(c.course_id),
+        title:             String(c.title ?? "—"),
+        n_enrolled:        enrolled,
+        n_completed:       completed,
+        total_enrollments: total,
+        completion_rate:   total > 0 ? Math.round((completed / total) * 100) : 0,
+      };
+    }),
   };
 }

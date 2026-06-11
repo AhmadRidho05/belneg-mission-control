@@ -66,35 +66,43 @@ export async function POST(req: NextRequest) {
     return bad(`gagal load stats: ${e?.message || "unknown"}`, 500);
   }
 
-  // Build a compact snapshot for the prompt (don't dump giant arrays)
+  // Build a compact LMS snapshot for the prompt
   const snapshot = {
-    total_users: stats.hero.total_users,
-    new_30d:     stats.hero.new_users_30d,
-    dau: stats.hero.dau, wau: stats.hero.wau, mau: stats.hero.mau,
-    assessments_done: stats.hero.assessments_done,
-    paths_generated:  stats.hero.paths_generated,
-    courses_started:  stats.hero.courses_started,
-    courses_completed: stats.hero.courses_completed,
-    funnel: stats.funnel,
-    avg_per_dim: stats.riasec.avg_per_dim,
-    top_codes: stats.riasec.top_codes.slice(0, 5),
-    top_careers: stats.career.top_primary.slice(0, 10).map(c => `${c.title} (${c.n})`),
-    top_provinces_by_users: stats.geographic.by_provinsi.slice(0, 5),
+    total_users:        stats.hero.total_users,
+    total_enrollments:  stats.hero.total_enrollments,
+    total_completed:    stats.hero.total_completed,
+    completion_rate:    `${stats.hero.completion_rate}%`,
+    active_programs:    stats.hero.active_programs,
+    total_courses:      stats.hero.total_courses,
+    total_certificates: stats.hero.total_certificates,
+    programs: stats.programs.map(p => ({
+      name:       p.name,
+      n_pending:  p.n_pending,
+      n_accepted: p.n_accepted,
+      n_rejected: p.n_rejected,
+      max:        p.maxParticipants,
+    })),
+    top_courses: stats.enrollment_by_course.slice(0, 8).map(c =>
+      `${c.title} — enrolled:${c.n_enrolled}, completed:${c.n_completed}, rate:${c.completion_rate}%`
+    ),
+    organizations: stats.organizations.map(o =>
+      `${o.name} (${o.n_courses} kursus, ${o.n_programs} program)`
+    ),
     focus,
   };
 
   const prompt = `
-Snapshot stats engagement siswa KKRI Pencari Arah (mobile app pencarian arah karier):
+Snapshot dashboard LMS KKRI:
 
 ${JSON.stringify(snapshot, null, 2)}
 
-Berdasarkan data ini, sarankan 3 aksi konkret yang bisa diambil admin atau product manager **minggu ini** untuk memperbaiki outcomes (engagement, retention, atau career match — sesuaikan dengan kondisi data).
+Berdasarkan data ini, sarankan 3 aksi konkret yang bisa diambil admin atau product manager **minggu ini** untuk meningkatkan enrollment, completion rate, atau efektivitas program LMS KKRI.
 
 Aturan ketat:
-  - Setiap rekomendasi HARUS referensi angka spesifik dari snapshot (mis. "drop-off 65% dari sign-up ke asesmen").
-  - action_steps HARUS bisa dieksekusi (mis. "kirim push notif ke 234 siswa yg belum self-assess", bukan "tingkatkan engagement").
+  - Setiap rekomendasi HARUS referensi angka spesifik dari snapshot (mis. "completion rate hanya 20% di kursus X", "5 pendaftar masih PENDING di program Y").
+  - action_steps HARUS bisa dieksekusi (mis. "follow-up 5 pendaftar PENDING program Y via WhatsApp", bukan "tingkatkan engagement").
   - Bahasa Indonesia profesional, ramah, dan ringkas.
-  - Jangan mengarang fitur yang belum disebutkan; gunakan yang sudah ada (push notif, email, in-app banner, leaderboard, content reminder, badge baru, dsb).
+  - Fokus pada program dengan pending tinggi, kursus dengan completion rendah, dan peluang enrollment baru.
 
 Panggil tool submit_recommendations.
 `.trim();
